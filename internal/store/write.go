@@ -272,10 +272,12 @@ func (t *Tx) UpsertCVE(ctx context.Context, c *model.CVE) error {
 	if c.Enriched {
 		refSource = "nvd"
 	}
+	seenRef := make(map[string]bool, len(c.Refs))
 	for _, r := range c.Refs {
-		if r.URL == "" {
+		if r.URL == "" || seenRef[r.URL] {
 			continue
 		}
+		seenRef[r.URL] = true
 		if _, err := t.stmts.insRef.ExecContext(ctx, c.ID, r.URL, r.Tags, r.Name, refSource); err != nil {
 			return fmt.Errorf("store: upsert %s: ref %s: %w", c.ID, r.URL, err)
 		}

@@ -184,6 +184,9 @@ func FromModel(c *model.CVE, names map[string]string) CVEDoc {
 		case m.EndExcl != "":
 			r.End, r.EndExclusive = m.EndExcl, true
 		}
+		if r.Start == "" && r.End == "" && !cpe.IsAny(m.Name.Version) && !cpe.IsNA(m.Name.Version) {
+			r.Exact = m.Name.Version
+		}
 		doc.CPE = append(doc.CPE, CPEDoc{
 			Criteria:       m.Criteria,
 			Part:           m.Name.Part,
