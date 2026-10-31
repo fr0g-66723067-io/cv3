@@ -464,3 +464,94 @@ func TestStats(t *testing.T) {
 		t.Fatalf("db size = %d", s.DBSize)
 	}
 }
+
+func TestDependentOwnership(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "cv3.db")
+	w, err := Create(path)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer w.Close()
+
+	adpName := mustCPE(t, "cpe:2.3:o:redhat:enterprise_linux:10.1:*:*:*:*:*:*:*")
+	published := &model.CVE{
+		ID: "CVE-2024-1000", State: "PUBLISHED", Assigner: "example",
+		Summary: "Initial description.", SummarySrc: "cna",
+		CPEs: []model.CPEMatch{{Criteria: adpName.Criteria(), Name: adpName, Vulnerable: true, Source: "adp"}},
+		Refs: []model.Reference{{URL: "https://example.test/a"}},
+	}
+	if err := w.UpsertCVE(ctx, published); err != nil {
+		t.Fatalf("UpsertCVE(published): %v", err)
+	}
+	// The same record republished without its ADP CPEs must not leave them
+	// behind, and its reference set is replaced rather than merged.
+	republished := &model.CVE{
+		ID: "CVE-2024-1000", State: "PUBLISHED", Assigner: "example",
+		Summary: "Updated description.", SummarySrc: "cna",
+		Refs: []model.Reference{{URL: "https://example.test/b"}},
+	}
+	if err := w.UpsertCVE(ctx, republished); err != nil {
+		t.Fatalf("UpsertCVE(republished): %v", err)
+	}
+
+	ro, err := Open(path, true)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ro.Close()
+	c, err := ro.Get(ctx, "CVE-2024-1000")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(c.CPEs) != 0 {
+		t.Fatalf("stale CPE rows survived: %+v", c.CPEs)
+	}
+	if len(c.Refs) != 1 || c.Refs[0].URL != "https://example.test/b" {
+		t.Fatalf("refs = %+v, want only the republished one", c.Refs)
+	}
+}
+
+func TestStateTransition(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "cv3.db")
+	w, err := Create(path)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer w.Close()
+
+	if err := w.UpsertCVE(ctx, &model.CVE{
+		ID: "CVE-2024-1001", State: "PUBLISHED", Summary: "published", SummarySrc: "cna",
+	}); err != nil {
+		t.Fatalf("UpsertCVE(published): %v", err)
+	}
+	// cvelistV5 can reject a published id; the state must follow.
+	if err := w.UpsertCVE(ctx, &model.CVE{
+		ID: "CVE-2024-1001", State: "REJECTED", Summary: "Rejected reason: duplicate.", SummarySrc: "cna",
+	}); err != nil {
+		t.Fatalf("UpsertCVE(rejected): %v", err)
+	}
+	// An NVD record (which carries no state) must not reset it.
+	if err := w.UpsertCVE(ctx, &model.CVE{
+		ID: "CVE-2024-1001", NVDStatus: "Rejected", Summary: "nvd summary", SummarySrc: "nvd", Enriched: true,
+	}); err != nil {
+		t.Fatalf("UpsertCVE(nvd): %v", err)
+	}
+
+	ro, err := Open(path, true)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ro.Close()
+	c, err := ro.Get(ctx, "CVE-2024-1001")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if c.State != "REJECTED" {
+		t.Fatalf("state = %q, want REJECTED", c.State)
+	}
+	if !c.Enriched || c.NVDStatus != "Rejected" {
+		t.Fatalf("enrichment = %v/%q", c.Enriched, c.NVDStatus)
+	}
+}

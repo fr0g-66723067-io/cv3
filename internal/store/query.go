@@ -606,7 +606,7 @@ func (d *DB) ByCPE(ctx context.Context, f CPEFilter) ([]CPEHit, error) {
 			m.start_incl, m.start_excl, m.end_incl, m.end_excl, m.src
 		 FROM cpe_match m JOIN cve c ON c.id = m.cve_id`+where+`
 		 ORDER BY c.best_score IS NULL, c.best_score DESC, c.id
-		 LIMIT 5000`, args...)
+		 LIMIT 100000`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: cpe: %w", err)
 	}

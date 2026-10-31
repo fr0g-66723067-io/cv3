@@ -355,11 +355,15 @@ func mergeCVE(old *rowSnap, in *model.CVE) *model.CVE {
 			out.Metrics[v] = m
 		}
 	}
-	if old.state != "" && old.state != "UNKNOWN" {
-		out.State = old.state
-	}
-	if out.State == "" {
-		out.State = "UNKNOWN"
+	// cvelistV5 owns record state. An incoming cvelistV5 record states it
+	// (PUBLISHED, REJECTED, RESERVED); an NVD record carries no state, so it
+	// must not clear the stored one.
+	if out.State == "" || out.State == "UNKNOWN" {
+		if old.state != "" {
+			out.State = old.state
+		} else {
+			out.State = "UNKNOWN"
+		}
 	}
 	if old.assigner != "" {
 		out.Assigner = old.assigner
@@ -404,34 +408,15 @@ func mergeCVE(old *rowSnap, in *model.CVE) *model.CVE {
 }
 
 // dependentSources is the set of dependent-row sources the incoming record
-// owns. Anything outside it (typically the other upstream) is preserved.
+// owns. Sources belong to one upstream only: every NVD row is tagged "nvd", and
+// every cvelistV5 row is tagged "cna" or "adp". Replacing an upstream's whole
+// row set is what keeps a record that lost its ADP CPEs from leaving them
+// behind, while never touching the other upstream's rows.
 func dependentSources(c *model.CVE) map[string]bool {
-	src := map[string]bool{}
-	for _, m := range c.CPEs {
-		src[m.Source] = true
+	if c.Enriched {
+		return map[string]bool{"nvd": true}
 	}
-	for _, w := range c.CWEs {
-		src[w.Source] = true
-	}
-	for _, p := range c.Products {
-		src[p.Source] = true
-	}
-	if len(c.Refs) > 0 {
-		if c.Enriched {
-			src["nvd"] = true
-		} else {
-			src["cna"] = true
-		}
-	}
-	if len(src) == 0 {
-		if c.Enriched {
-			src["nvd"] = true
-		} else {
-			src["cna"] = true
-			src["adp"] = true
-		}
-	}
-	return src
+	return map[string]bool{"cna": true, "adp": true}
 }
 
 // sourceSlots packs the source set into the three placeholders of the dependent

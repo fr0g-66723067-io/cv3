@@ -198,19 +198,22 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	totalFailed := failed
 
 	// NVD enrichment, oldest year first so the rolling feeds land last.
+	nvdTimestamp := ""
 	for year := o.YearsFrom; year <= o.YearsTo; year++ {
-		failed, err := ingestFeed(ctx, o, w, fmt.Sprint(year), log)
+		failed, ts, err := ingestFeed(ctx, o, w, fmt.Sprint(year), log)
 		if err != nil {
 			return fail(err)
 		}
 		totalFailed += failed
+		nvdTimestamp = ts
 	}
 	for _, name := range []string{"recent", "modified"} {
-		failed, err := ingestFeed(ctx, o, w, name, log)
+		failed, ts, err := ingestFeed(ctx, o, w, name, log)
 		if err != nil {
 			return fail(err)
 		}
 		totalFailed += failed
+		nvdTimestamp = ts
 	}
 
 	// CWE catalog.
@@ -242,7 +245,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	if err := w.SetSourceState(ctx, SourceCVEList, release.Tag); err != nil {
 		return fail(err)
 	}
-	if err := w.SetSourceState(ctx, SourceNVD, time.Now().UTC().Format(time.RFC3339)); err != nil {
+	if err := w.SetSourceState(ctx, SourceNVD, feedWatermark(nvdTimestamp)); err != nil {
 		return fail(err)
 	}
 	if err := w.SetSourceState(ctx, SourceCWE, version); err != nil {
@@ -271,39 +274,51 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	return sum, nil
 }
 
+// feedWatermark normalises a feed timestamp, falling back to the current time
+// when a feed carries none.
+func feedWatermark(ts string) string {
+	if norm := model.NormalizeTime(ts); norm != "" {
+		return norm
+	}
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
 // ingestFeed downloads and applies one NVD feed (a year, "recent" or
-// "modified") and returns the number of unparsable records.
-func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, log io.Writer) (int, error) {
+// "modified"). It returns the number of unparsable records and the feed's own
+// timestamp, which becomes the NVD watermark.
+func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, log io.Writer) (failed int, timestamp string, err error) {
 	url := o.FeedURL(name)
 	dest := filepath.Join(o.CacheDir, "nvdcve-2.0-"+name+".json.gz")
 	if err := o.Fetcher.Get(ctx, url, dest, log); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if !o.KeepCache {
 		defer os.Remove(dest)
 	}
 	f, err := os.Open(dest)
 	if err != nil {
-		return 0, fmt.Errorf("ingest: nvd %s: %w", name, err)
+		return 0, "", fmt.Errorf("ingest: nvd %s: %w", name, err)
 	}
 	defer f.Close()
-	_, failed, err := runPipeline(ctx, o.Workers, 512,
+	var seen int
+	_, failed, err = runPipeline(ctx, o.Workers, 512,
 		func(yield func([]byte) error) error {
-			_, _, err := ParseNVDFeed(f, func(raw []byte) error {
+			count, ts, err := ParseNVDFeed(f, func(raw []byte) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				return yield(raw)
 			})
+			seen, timestamp = count, ts
 			return err
 		}, ParseNVDRecord, w)
 	if err != nil {
-		return failed, err
+		return failed, timestamp, err
 	}
 	if log != nil {
-		fmt.Fprintf(log, "cv3: nvd %s: applied\n", name)
+		fmt.Fprintf(log, "cv3: nvd %s: %d records applied\n", name, seen)
 	}
-	return failed, nil
+	return failed, timestamp, nil
 }
 
 // Update applies cvelistV5 hourly deltas published since the stored watermark,
@@ -400,14 +415,16 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 		}
 	}
 
+	nvdTimestamp := ""
 	for _, name := range []string{"modified", "recent"} {
-		failed, err := ingestFeed(ctx, o, w, name, log)
+		failed, ts, err := ingestFeed(ctx, o, w, name, log)
 		if err != nil {
 			return sum, err
 		}
 		sum.ParseErrors += failed
+		nvdTimestamp = ts
 	}
-	if err := w.SetSourceState(ctx, SourceNVD, now().UTC().Format(time.RFC3339)); err != nil {
+	if err := w.SetSourceState(ctx, SourceNVD, feedWatermark(nvdTimestamp)); err != nil {
 		return sum, err
 	}
 	if err := w.SetMeta(ctx, "updated_at", now().UTC().Format(time.RFC3339)); err != nil {
