@@ -45,6 +45,7 @@ type fixtureServer struct {
 	server   *httptest.Server
 	mu       sync.Mutex
 	releases []Release
+	missing  map[string]bool   // feed names answered with 404
 	archives map[string][]byte // path -> body
 	feedGz   []byte
 	cweZip   []byte
@@ -55,6 +56,7 @@ func newFixtureServer(t *testing.T) *fixtureServer {
 	f := &fixtureServer{
 		t:        t,
 		archives: map[string][]byte{},
+		missing:  map[string]bool{},
 		feedGz:   readFixture(t, "nvd", "feed-fragment.json.gz"),
 		cweZip: zipBytes(t, map[string][]byte{
 			"cwec_v5.0.xml": readFixture(t, "cwe", "cwec-fragment.xml"),
@@ -81,6 +83,14 @@ func (f *fixtureServer) handle(w http.ResponseWriter, r *http.Request) {
 		writeReleases(w, releases)
 	case r.URL.Path == "/feed/recent.json.gz" || r.URL.Path == "/feed/modified.json.gz" ||
 		len(r.URL.Path) > len("/feed/") && r.URL.Path[:len("/feed/")] == "/feed/":
+		name := r.URL.Path[len("/feed/"):]
+		f.mu.Lock()
+		gone := f.missing[name[:len(name)-len(".json.gz")]]
+		f.mu.Unlock()
+		if gone {
+			http.NotFound(w, r)
+			return
+		}
 		f.mu.Lock()
 		body := f.feedGz
 		f.mu.Unlock()

@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,5 +86,38 @@ func TestUpdateRefetchesRollingFeeds(t *testing.T) {
 	}
 	if !c.Enriched {
 		t.Fatal("refreshed record not marked enriched")
+	}
+}
+
+// TestUpdateSurvivesMissingRollingFeed pins the 2026-10-31 upstream behaviour:
+// nvdcve-2.0-modified.json.gz answered 404 while -recent.json.gz answered 200.
+// A missing rolling feed loses freshness, not completeness, so the update
+// completes and reports a warning.
+func TestUpdateSurvivesMissingRollingFeed(t *testing.T) {
+	f := newFixtureServer(t)
+	allZip := zipBytes(t, map[string][]byte{
+		"cves/2024/3xxx/CVE-2024-3094.json": readFixture(t, "cvelist", "CVE-2024-3094.json"),
+	})
+	f.addRelease("cve_2026-10-30_1800Z", "2026-10-30_all_CVEs_at_midnight.zip.zip", "/assets/all-1800.zip", allZip)
+
+	dir := t.TempDir()
+	opts := f.options(filepath.Join(dir, "cv3.db"), filepath.Join(dir, "cache"))
+	if _, err := Sync(context.Background(), opts); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	f.mu.Lock()
+	f.missing["modified"] = true
+	f.mu.Unlock()
+
+	opts.Now = func() time.Time { return time.Date(2026, 10, 30, 19, 30, 0, 0, time.UTC) }
+	sum, err := Update(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(sum.Warnings) != 1 || !strings.Contains(sum.Warnings[0], "modified") {
+		t.Fatalf("warnings = %v", sum.Warnings)
+	}
+	if sum.CVEs == 0 {
+		t.Fatalf("summary not filled: %+v", sum)
 	}
 }

@@ -43,6 +43,12 @@ re-download anyway, and `-keep-cache` to keep the archives after a successful
 run. NVD serves roughly 200 KB/s per connection, so the feeds are prefetched in
 parallel while the cvelistV5 archive is parsed.
 
+The rolling feeds are occasionally unavailable upstream (measured 2026-10-31:
+`nvdcve-2.0-modified.json.gz` answered 404 for a period while `-recent.json.gz`
+answered 200). `cv3 update` reports that as a warning and still applies
+everything else, because a missing rolling feed costs freshness, not
+completeness.
+
 NVD feeds lag publication (measured 2026-10-30: 390 of 2 514 recently changed
 `CVE-2026-*` ids were absent from the NVD 2026 feed). Those CVEs still appear in
 cv3, built from cvelistV5 alone, with `cv3 search -no-nvd` listing exactly the
@@ -82,7 +88,10 @@ cv3 cwe -search injection
 ```
 
 `cv3 cpe -version` evaluates NVD version ranges (`versionStartIncluding`,
-`versionEndExcluding`, ...) and exact CPE versions. CNA-only product matches
+`versionEndExcluding`, ...) and exact CPE versions. Specify `-product` when you
+know it: a vendor-only query has to rank every CVE of that vendor and costs
+around a second for a vendor as large as `linux`, while a vendor+product lookup
+is a 30 ms index seek. CNA-only product matches
 carry no usable version semantics (upstream uses git hashes and
 `versionType: custom`), so they are reported as `unversioned` rather than
 guessed at.

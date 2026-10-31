@@ -483,6 +483,7 @@ type IngestDoc struct {
 	CWEs        int               `json:"cwes"`
 	Refs        int               `json:"refs"`
 	ParseErrors int               `json:"parseErrors"`
+	Warnings    []string          `json:"warnings,omitempty"`
 	NewCVEs     int               `json:"newCves"`
 	UpdatedCVEs int               `json:"updatedCves"`
 	DeltaTags   []string          `json:"deltaTags,omitempty"`

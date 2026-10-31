@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -608,7 +607,7 @@ func (d *DB) ByCPE(ctx context.Context, f CPEFilter) ([]CPEHit, error) {
 			m.start_incl, m.start_excl, m.end_incl, m.end_excl, m.src
 		 FROM cpe_match m JOIN cve c ON c.id = m.cve_id`+where+`
 		 ORDER BY c.best_score IS NULL, c.best_score DESC, c.id
-		 LIMIT 100000`, args...)
+		 LIMIT 200000`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: cpe: %w", err)
 	}
@@ -636,6 +635,11 @@ func (d *DB) ByCPE(ctx context.Context, f CPEFilter) ([]CPEHit, error) {
 		key := h.CVE + "\x00" + crit
 		if seen[key] {
 			continue
+		}
+		if len(hits) >= f.Limit {
+			// Rows arrive in score order, so once the page is full the rest of
+			// this vendor's matches cannot change the answer.
+			break
 		}
 		var r cpe.Range
 		switch {
@@ -682,21 +686,8 @@ func (d *DB) ByCPE(ctx context.Context, f CPEFilter) ([]CPEHit, error) {
 		}
 		hits = append(hits, prodHits...)
 	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		a, b := hits[i], hits[j]
-		switch {
-		case a.Score != nil && b.Score != nil && *a.Score != *b.Score:
-			return *a.Score > *b.Score
-		case a.Score != nil && b.Score == nil:
-			return true
-		case a.Score == nil && b.Score != nil:
-			return false
-		}
-		return a.CVE < b.CVE
-	})
-	if len(hits) > f.Limit {
-		hits = hits[:f.Limit]
-	}
+	// Hits already arrive ordered by score (SQL) and are truncated at the page
+	// size while scanning, so no second sort is needed.
 	return hits, nil
 }
 

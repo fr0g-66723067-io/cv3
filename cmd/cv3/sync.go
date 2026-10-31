@@ -121,6 +121,7 @@ func reportIngest(stdout, stderr io.Writer, kind string, sum ingest.Summary, jso
 		CWEs:        sum.CWEs,
 		Refs:        sum.Refs,
 		ParseErrors: sum.ParseErrors,
+		Warnings:    sum.Warnings,
 		NewCVEs:     sum.NewCVEs,
 		UpdatedCVEs: sum.UpdatedCVEs,
 		DeltaTags:   sum.DeltaTags,
@@ -149,6 +150,9 @@ func reportIngest(stdout, stderr io.Writer, kind string, sum ingest.Summary, jso
 	}
 	if sum.ParseErrors > 0 {
 		fmt.Fprintf(stderr, "cv3: %d records could not be parsed\n", sum.ParseErrors)
+	}
+	for _, w := range sum.Warnings {
+		fmt.Fprintf(stderr, "cv3: warning: %s\n", w)
 	}
 	return exitOK
 }

@@ -116,6 +116,7 @@ type Summary struct {
 	CWEs        int
 	Refs        int
 	ParseErrors int
+	Warnings    []string
 	NewCVEs     int
 	UpdatedCVEs int
 	DeltaTags   []string
@@ -218,10 +219,16 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 		totalFailed += failed
 		nvdTimestamp = ts
 	}
+	warnings := []string{}
 	for _, name := range []string{"recent", "modified"} {
 		failed, ts, err := ingestFeed(ctx, o, w, name, false, log)
 		if err != nil {
-			return fail(err)
+			// A rolling feed disappears upstream from time to time (measured
+			// 2026-10-31: nvdcve-2.0-modified.json.gz answered 404 while
+			// -recent.json.gz answered 200). Losing one loses freshness, not
+			// corpus completeness, so the sync continues and reports it.
+			warnings = append(warnings, fmt.Sprintf("%s feed unavailable: %v", name, err))
+			continue
 		}
 		totalFailed += failed
 		nvdTimestamp = ts
@@ -275,6 +282,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 
 	sum := Summary{
 		ParseErrors: totalFailed,
+		Warnings:    warnings,
 		Duration:    time.Since(started),
 		DBPath:      o.DBPath,
 		Sources:     map[string]string{SourceCVEList: release.Tag, SourceCWE: version},
@@ -481,7 +489,8 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 	for _, name := range []string{"modified", "recent"} {
 		failed, ts, err := ingestFeed(ctx, o, w, name, true, log)
 		if err != nil {
-			return sum, err
+			sum.Warnings = append(sum.Warnings, fmt.Sprintf("%s feed unavailable: %v", name, err))
+			continue
 		}
 		sum.ParseErrors += failed
 		nvdTimestamp = ts
