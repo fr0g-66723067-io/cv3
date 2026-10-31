@@ -85,6 +85,27 @@ type CVE struct {
 	Refs       []Reference
 	KEV        *KEV
 	Enriched   bool
+
+	// Best is the representative metric: the highest CVSS version present.
+	Best        *Metric
+	BestVersion string
+}
+
+// Rank orders metric sources by authority: NVD primary, NVD secondary, CNA,
+// ADP. A metric never replaces a higher-ranked one, which is what makes
+// re-applying a cvelistV5 record idempotent after NVD enrichment.
+func (m Metric) Rank() int {
+	switch m.Source {
+	case "nvd-primary":
+		return 4
+	case "nvd-secondary":
+		return 3
+	case "cna":
+		return 2
+	case "adp":
+		return 1
+	}
+	return 0
 }
 
 // Metric returns the metric for the given version key and whether it exists.
