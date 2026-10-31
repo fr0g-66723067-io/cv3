@@ -192,6 +192,9 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	if err != nil {
 		return fail(err)
 	}
+	if written == 0 {
+		return fail(fmt.Errorf("ingest: sync: cvelistV5 archive yielded no writable records"))
+	}
 	if log != nil {
 		fmt.Fprintf(log, "cv3: cvelistV5: %d records parsed, %d unparsable\n", written, failed)
 	}

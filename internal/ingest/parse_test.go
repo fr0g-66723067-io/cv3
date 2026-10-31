@@ -269,6 +269,20 @@ func TestWalkCVEZip(t *testing.T) {
 	}
 }
 
+func TestWalkCVEZipEmptyArchiveFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.zip")
+	body := zipBytes(t, map[string][]byte{
+		"readme.md":            []byte("no cves here"),
+		"cves/2024/3xxx/x.txt": []byte("still not a cve"),
+	})
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, _, err := WalkCVEZip(path, func(id string, raw []byte) error { return nil }); err == nil {
+		t.Fatal("WalkCVEZip accepted an archive with no CVE records")
+	}
+}
+
 func TestTagTime(t *testing.T) {
 	got, err := tagTime("cve_2026-10-30_1900Z")
 	if err != nil {
@@ -279,5 +293,31 @@ func TestTagTime(t *testing.T) {
 	}
 	if _, err := tagTime("not-a-tag"); err == nil {
 		t.Fatal("tagTime accepted an invalid tag")
+	}
+}
+
+func TestWalkCVEZipNested(t *testing.T) {
+	inner := zipBytes(t, map[string][]byte{
+		"cves/2024/3xxx/CVE-2024-3094.json": []byte(`{"cveMetadata":{"cveId":"CVE-2024-3094"}}`),
+		"cves/2024/3xxx/CVE-2024-3095.json": []byte(`{"cveMetadata":{"cveId":"CVE-2024-3095"}}`),
+	})
+	outer := zipBytes(t, map[string][]byte{"cves.zip": inner})
+	path := filepath.Join(t.TempDir(), "all.zip")
+	if err := os.WriteFile(path, outer, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	var ids []string
+	parsed, _, err := WalkCVEZip(path, func(id string, raw []byte) error {
+		ids = append(ids, id)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkCVEZip(nested): %v", err)
+	}
+	if parsed != 2 || len(ids) != 2 {
+		t.Fatalf("parsed=%d ids=%v", parsed, ids)
+	}
+	if _, err := os.Stat(path + ".inner"); !os.IsNotExist(err) {
+		t.Fatalf("temporary inner archive left behind: %v", err)
 	}
 }

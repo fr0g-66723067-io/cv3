@@ -135,13 +135,22 @@ func ListReleases(ctx context.Context, token string, perPage int) ([]Release, er
 	return out, nil
 }
 
-var cveFileRE = regexp.MustCompile(`^CVE-\d{4}-\d{4,}\.json$`)
+var cveFileRE = regexp.MustCompile(`(?i)^CVE-\d{4}-\d{4,}\.json$`)
 
 // WalkCVEZip streams every CVE JSON member of a cvelistV5 archive. Members are
-// read in place: the archive is never extracted, and only one record is held in
-// memory at a time. Both known layouts match, because only the base name
-// matters ("cves/YYYY/NNNNx/CVE-….json" and "deltaCves/CVE-….json").
+// read in place: the archive is never extracted wholesale, and only one record
+// is held in memory at a time. Both known layouts match, because only the base
+// name matters ("cves/YYYY/NNNNx/CVE-….json" and "deltaCves/CVE-….json").
+//
+// The daily all-CVEs asset is distributed as a zip that contains a single
+// "cves.zip" member (verified 2026-10-30: 648 MB outer, 717 MB inner, 417 488
+// CVE files), so a nested archive is unwrapped through a temporary file in the
+// same directory.
 func WalkCVEZip(archive string, fn func(id string, raw []byte) error) (parsed, skipped int, err error) {
+	return walkZip(archive, fn, 0)
+}
+
+func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (int, int, error) {
 	f, err := os.Open(archive)
 	if err != nil {
 		return 0, 0, fmt.Errorf("ingest: cvelistV5: %w", err)
@@ -155,27 +164,100 @@ func WalkCVEZip(archive string, fn func(id string, raw []byte) error) (parsed, s
 	if err != nil {
 		return 0, 0, fmt.Errorf("ingest: cvelistV5: %w", err)
 	}
+
+	matches := 0
+	var nested *zip.File
 	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() {
+			continue
+		}
+		if cveFileRE.MatchString(path.Base(zf.Name)) {
+			matches++
+		}
+	}
+	if matches == 0 {
+		for _, zf := range zr.File {
+			if zf.FileInfo().IsDir() || !strings.EqualFold(path.Ext(zf.Name), ".zip") {
+				continue
+			}
+			if nested != nil {
+				return 0, len(zr.File), fmt.Errorf("ingest: cvelistV5: %s: several nested archives", archive)
+			}
+			nested = zf
+		}
+		if nested == nil {
+			return 0, len(zr.File), fmt.Errorf("ingest: cvelistV5: %s: no CVE records among %d entries", archive, len(zr.File))
+		}
+		if depth >= 1 {
+			return 0, len(zr.File), fmt.Errorf("ingest: cvelistV5: %s: nested archives deeper than one level", archive)
+		}
+		inner := archive + ".inner"
+		if err := extractMember(nested, inner); err != nil {
+			return 0, len(zr.File), err
+		}
+		f.Close()
+		parsed, skipped, err := walkZip(inner, fn, depth+1)
+		os.Remove(inner)
+		return parsed, skipped, err
+	}
+
+	parsedCount := 0
+	skippedCount := 0
+	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() {
+			skippedCount++
+			continue
+		}
 		if !cveFileRE.MatchString(path.Base(zf.Name)) {
-			skipped++
+			skippedCount++
 			continue
 		}
 		id := strings.TrimSuffix(path.Base(zf.Name), ".json")
 		rc, err := zf.Open()
 		if err != nil {
-			return parsed, skipped, fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
+			return parsedCount, skippedCount, fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
 		}
 		raw, err := io.ReadAll(io.LimitReader(rc, 4<<20))
 		rc.Close()
 		if err != nil {
-			return parsed, skipped, fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
+			return parsedCount, skippedCount, fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
 		}
 		if err := fn(id, raw); err != nil {
-			return parsed, skipped, err
+			return parsedCount, skippedCount, err
 		}
-		parsed++
+		parsedCount++
 	}
-	return parsed, skipped, nil
+	if parsedCount == 0 {
+		// An archive that matches nothing is a broken download or an upstream
+		// layout change; reporting success would silently leave the corpus
+		// without its base records.
+		return 0, skippedCount, fmt.Errorf("ingest: cvelistV5: %s: no CVE records among %d entries", archive, skippedCount)
+	}
+	return parsedCount, skippedCount, nil
+}
+
+// extractMember writes one archive member to dest, used only to make a nested
+// archive addressable (zip readers need a ReaderAt).
+func extractMember(zf *zip.File, dest string) error {
+	rc, err := zf.Open()
+	if err != nil {
+		return fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
+	}
+	defer rc.Close()
+	out, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("ingest: cvelistV5: %w", err)
+	}
+	if _, err := io.Copy(out, rc); err != nil {
+		out.Close()
+		os.Remove(dest)
+		return fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(dest)
+		return fmt.Errorf("ingest: cvelistV5: %w", err)
+	}
+	return nil
 }
 
 // cvelistV5 JSON shapes, only the parts cv3 indexes.
