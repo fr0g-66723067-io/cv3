@@ -14,7 +14,7 @@ func TestResolveDBPrecedence(t *testing.T) {
 	home := filepath.Join(root, "home")
 	xdg := filepath.Join(root, "xdg")
 	work := filepath.Join(root, "work")
-	for _, dir := range []string{home, xdg, filepath.Join(work, "data")} {
+	for _, dir := range []string{home, xdg, work} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
@@ -24,11 +24,7 @@ func TestResolveDBPrecedence(t *testing.T) {
 	t.Setenv("CV3_DB", "")
 	t.Chdir(work)
 
-	localDB := filepath.Join(work, "data", "cv3.db")
 	xdgDB := filepath.Join(xdg, "cv3", "cv3.db")
-
-	// No project database yet: the XDG data directory wins over the home
-	// fallback.
 	got, err := resolveDB("")
 	if err != nil {
 		t.Fatalf("resolveDB: %v", err)
@@ -37,70 +33,66 @@ func TestResolveDBPrecedence(t *testing.T) {
 		t.Fatalf("resolveDB() = %q, want %q", got, xdgDB)
 	}
 
-	// A synced checkout wins over XDG.
-	if err := os.WriteFile(localDB, []byte("db"), 0o644); err != nil {
-		t.Fatalf("write local db: %v", err)
+	// A database in the working directory is not a default: the path the code
+	// expects is the one `make install` provisions.
+	if err := os.MkdirAll(filepath.Join(work, "data"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "data", "cv3.db"), []byte("db"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 	got, err = resolveDB("")
 	if err != nil {
 		t.Fatalf("resolveDB: %v", err)
 	}
-	if got != localDB {
-		t.Fatalf("resolveDB() = %q, want %q", got, localDB)
+	if got != xdgDB {
+		t.Fatalf("resolveDB() = %q, want %q (cwd database must not win)", got, xdgDB)
 	}
 
-	// CV3_DB wins over the project database.
-	t.Setenv("CV3_DB", filepath.Join(root, "env", "cv3.db"))
-	want := filepath.Join(root, "env", "cv3.db")
-	got, err = resolveDB("")
-	if err != nil {
-		t.Fatalf("resolveDB: %v", err)
-	}
-	if got != want {
-		t.Fatalf("resolveDB() = %q, want %q", got, want)
+	// $CV3_DB wins over the default.
+	envDB := filepath.Join(root, "env", "cv3.db")
+	t.Setenv("CV3_DB", envDB)
+	if got, err = resolveDB(""); err != nil || got != envDB {
+		t.Fatalf("resolveDB() = %q, %v; want %q", got, err, envDB)
 	}
 
 	// The flag wins over everything.
-	flagPath := filepath.Join(root, "flag", "cv3.db")
-	got, err = resolveDB(flagPath)
-	if err != nil {
-		t.Fatalf("resolveDB: %v", err)
-	}
-	if got != flagPath {
-		t.Fatalf("resolveDB(flag) = %q, want %q", got, flagPath)
+	flagDB := filepath.Join(root, "flag", "cv3.db")
+	if got, err = resolveDB(flagDB); err != nil || got != flagDB {
+		t.Fatalf("resolveDB(flag) = %q, %v; want %q", got, err, flagDB)
 	}
 
-	// Without XDG the home data directory is the fallback.
+	// Without XDG_DATA_HOME the home data directory is the default.
 	t.Setenv("CV3_DB", "")
 	t.Setenv("XDG_DATA_HOME", "")
-	if err := os.Remove(localDB); err != nil {
-		t.Fatalf("remove local db: %v", err)
-	}
-	got, err = resolveDB("")
-	if err != nil {
+	if got, err = resolveDB(""); err != nil {
 		t.Fatalf("resolveDB: %v", err)
 	}
-	if wantHome := filepath.Join(home, ".local", "share", "cv3", "cv3.db"); got != wantHome {
-		t.Fatalf("resolveDB() = %q, want %q", got, wantHome)
+	if want := filepath.Join(home, ".local", "share", "cv3", "cv3.db"); got != want {
+		t.Fatalf("resolveDB() = %q, want %q", got, want)
 	}
 }
 
-// TestStatsWithoutFlagsFindsProjectDatabase is the behaviour the Makefile and
-// README promise: after `cv3 sync` in a checkout, `cv3 stats` needs no -db.
-func TestStatsWithoutFlagsFindsProjectDatabase(t *testing.T) {
-	work := t.TempDir()
-	db := storetest.BuildAt(t, filepath.Join(work, "data", "cv3.db"))
-	t.Chdir(work)
+// TestStatsWithoutFlagsUsesInstalledDefault is the contract `make install`
+// promises: the database lives at the resolved default, so a bare `cv3 stats`
+// finds it from any working directory.
+func TestStatsWithoutFlagsUsesInstalledDefault(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	work := filepath.Join(root, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Setenv("XDG_DATA_HOME", xdg)
 	t.Setenv("CV3_DB", "")
-	t.Setenv("XDG_DATA_HOME", filepath.Join(work, "xdg"))
+	db := storetest.BuildAt(t, filepath.Join(xdg, "cv3", "cv3.db"))
+	t.Chdir(work)
 
 	code, stdout, stderr := runCLI("stats")
 	if code != exitOK {
 		t.Fatalf("stats exit = %d (stderr %s)", code, stderr)
 	}
-	if !containsLine(stdout, db) {
+	if !strings.Contains(stdout, db) {
 		t.Fatalf("stats did not report %q:\n%s", db, stdout)
 	}
 }
-
-func containsLine(out, sub string) bool { return strings.Contains(out, sub) }

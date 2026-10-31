@@ -18,17 +18,30 @@ cv3 serve     # local JSON API on 127.0.0.1:8080
 Build, test and install:
 
 ```
-make build      # ./cv3
+make build          # ./cv3
 make check vet test
 make bench
-make install    # -> $(PREFIX)/bin/cv3, PREFIX defaults to ~/.local
-make uninstall
+make install        # binary -> ~/.local/bin, database -> ~/.local/share/cv3/cv3.db
+make uninstall      # binary only; the database is left in place
 ```
 
-The database is not installed: it is 2.4 GiB, is rebuilt by `cv3 sync`, and is
-resolved at run time from `-db`, then `$CV3_DB`, then `./data/cv3.db` when that
-file exists, then `$XDG_DATA_HOME/cv3/cv3.db`. A checkout that has synced needs
-no flags; an installed binary run elsewhere uses the XDG location.
+`make install` puts both halves where the code looks by default: the binary on
+PATH and the database at the resolved default path (`$XDG_DATA_HOME/cv3/cv3.db`,
+else `~/.local/share/cv3/cv3.db`). A database built in a checkout
+(`./data/cv3.db`) is moved into place; an existing database at the destination is
+never overwritten.
+
+Both locations are selectable:
+
+```
+make install PREFIX=/opt/cv3                 # binary -> /opt/cv3/bin
+make install DBPATH=/srv/cv3/cv3.db          # database elsewhere; export CV3_DB=...
+make install SRCDB=/backup/cv3.db            # ingest a database from elsewhere
+```
+
+The resolution order at run time is `-db`, then `$CV3_DB`, then
+`$XDG_DATA_HOME/cv3/cv3.db`, then `~/.local/share/cv3/cv3.db`. The download cache
+lives beside the database in `cache/`.
 
 ## Data sources
 
