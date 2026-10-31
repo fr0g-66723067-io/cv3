@@ -41,6 +41,7 @@ type Options struct {
 	KeepCache bool
 	Workers   int
 	Log       io.Writer
+	Refresh   bool // re-download assets even when the cache has them
 
 	YearsFrom, YearsTo int
 	MinFree            int64 // bytes required in the DB directory; 0 = default
@@ -86,6 +87,7 @@ func (o *Options) normalize() error {
 		o.Fetcher = &Fetcher{Dir: o.CacheDir, Retries: 3}
 	}
 	o.Fetcher.Dir = o.CacheDir
+	o.Fetcher.Force = o.Refresh
 	if o.FeedURL == nil {
 		o.FeedURL = func(name string) string { return fmt.Sprintf(nvdFeedBase, name) }
 	}
@@ -163,6 +165,8 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	if err := o.Fetcher.Get(ctx, allURL, allZip, log); err != nil {
 		return Summary{}, err
 	}
+	prefetchDone := make(chan error, 1)
+	go func() { prefetchDone <- prefetchFeeds(ctx, o, log) }()
 
 	newPath := o.DBPath + ".new"
 	if err := os.Remove(newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -199,8 +203,12 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 		fmt.Fprintf(log, "cv3: cvelistV5: %d records parsed, %d unparsable\n", written, failed)
 	}
 	totalFailed := failed
+	if err := <-prefetchDone; err != nil {
+		return fail(err)
+	}
 
-	// NVD enrichment, oldest year first so the rolling feeds land last.
+	// NVD enrichment, oldest year first so the rolling feeds land last. The
+	// feeds were fetched concurrently while the base corpus was parsed.
 	nvdTimestamp := ""
 	for year := o.YearsFrom; year <= o.YearsTo; year++ {
 		failed, ts, err := ingestFeed(ctx, o, w, fmt.Sprint(year), log)
@@ -279,6 +287,52 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 
 // feedWatermark normalises a feed timestamp, falling back to the current time
 // when a feed carries none.
+// feedDest is the cache path of one NVD feed.
+func feedDest(o Options, name string) string {
+	return filepath.Join(o.CacheDir, "nvdcve-2.0-"+name+".json.gz")
+}
+
+// prefetchFeeds downloads the NVD feeds concurrently while the cvelistV5 pass
+// runs. NVD serves about 200 KB/s per connection, so the corpus download is
+// slower than parsing it; overlapping the two removes the download from the
+// critical path.
+func prefetchFeeds(ctx context.Context, o Options, log io.Writer) error {
+	names := make([]string, 0, 8)
+	for year := o.YearsFrom; year <= o.YearsTo; year++ {
+		names = append(names, fmt.Sprint(year))
+	}
+	names = append(names, "recent", "modified")
+
+	const parallel = 4
+	sem := make(chan struct{}, parallel)
+	errCh := make(chan error, len(names))
+	var wg sync.WaitGroup
+	for _, name := range names {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			}
+			defer func() { <-sem }()
+			if err := o.Fetcher.Get(ctx, o.FeedURL(name), feedDest(o, name), log); err != nil {
+				errCh <- err
+			}
+		}(name)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func feedWatermark(ts string) string {
 	if norm := model.NormalizeTime(ts); norm != "" {
 		return norm
@@ -291,7 +345,7 @@ func feedWatermark(ts string) string {
 // timestamp, which becomes the NVD watermark.
 func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, log io.Writer) (failed int, timestamp string, err error) {
 	url := o.FeedURL(name)
-	dest := filepath.Join(o.CacheDir, "nvdcve-2.0-"+name+".json.gz")
+	dest := feedDest(o, name)
 	if err := o.Fetcher.Get(ctx, url, dest, log); err != nil {
 		return 0, "", err
 	}

@@ -3,8 +3,8 @@ package main
 const usage = `cv3 — offline NVD search: CVE + CVSS + CPE + CWE.
 
 Usage:
-  cv3 sync   [-db PATH] [-cache DIR] [-keep-cache] [-workers N] [-years A-B] [-quiet] [-json]
-  cv3 update [-db PATH] [-cache DIR] [-keep-cache] [-quiet] [-json]
+  cv3 sync   [-db PATH] [-cache DIR] [-keep-cache] [-refresh] [-workers N] [-years A-B] [-quiet] [-json]
+  cv3 update [-db PATH] [-cache DIR] [-keep-cache] [-refresh] [-quiet] [-json]
   cv3 search [flags] <terms...>
   cv3 get    <CVE-ID>... [-json]
   cv3 cpe    [-vendor V] [-product P] [-version X] [-part a|o|h] [-cpe CPE] [-limit N] [-json]

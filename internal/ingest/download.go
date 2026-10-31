@@ -19,6 +19,11 @@ type Fetcher struct {
 	UA      string
 	Client  *http.Client
 
+	// Force ignores cached files and downloads every asset again. Reuse (the
+	// default) turns an interrupted sync into a resumable one: the archives
+	// already in the cache are not fetched a second time.
+	Force bool
+
 	// backoff is the delay before retry n; tests shrink it.
 	backoff []time.Duration
 }
@@ -49,6 +54,17 @@ func (f *Fetcher) delays() []time.Duration {
 func (f *Fetcher) Get(ctx context.Context, url, dest string, log io.Writer) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return fmt.Errorf("ingest: fetch: %w", err)
+	}
+	if !f.Force {
+		if fi, err := os.Stat(dest); err == nil && fi.Size() > 0 {
+			if log != nil {
+				fmt.Fprintf(log, "cv3: cached %s (%d bytes)\n", filepath.Base(dest), fi.Size())
+			}
+			return nil
+		}
+	}
+	if log != nil {
+		fmt.Fprintf(log, "cv3: downloading %s\n", url)
 	}
 	retries := max(1, f.Retries)
 	delays := f.delays()

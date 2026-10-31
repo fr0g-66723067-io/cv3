@@ -26,6 +26,7 @@ type ingestFlags struct {
 	years     string
 	quiet     bool
 	json      bool
+	refresh   bool
 }
 
 func (f *ingestFlags) register(fs *flag.FlagSet) {
@@ -35,6 +36,7 @@ func (f *ingestFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&f.workers, "workers", 0, "parser workers (default min(8, NumCPU))")
 	fs.StringVar(&f.years, "years", "", "NVD year range, e.g. 2015-2026")
 	fs.BoolVar(&f.quiet, "quiet", false, "suppress progress output")
+	fs.BoolVar(&f.refresh, "refresh", false, "re-download assets even when cached")
 	fs.BoolVar(&f.json, "json", false, "emit JSON")
 }
 
@@ -48,6 +50,7 @@ func (f *ingestFlags) options(stdout, stderr io.Writer) (ingest.Options, int) {
 		CacheDir:  f.cache,
 		KeepCache: f.keepCache,
 		Workers:   f.workers,
+		Refresh:   f.refresh,
 	}
 	if opts.CacheDir == "" {
 		opts.CacheDir = filepath.Join(filepath.Dir(dbPath), "cache")
