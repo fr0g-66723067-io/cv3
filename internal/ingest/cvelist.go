@@ -295,7 +295,7 @@ func ParseCVEListV5(raw []byte) (*model.CVE, error) {
 		ID:       id,
 		State:    strings.ToUpper(doc.CveMetadata.State),
 		Assigner: doc.CveMetadata.AssignerShortName,
-		Reserved: doc.CveMetadata.DateReserved,
+		Reserved: model.NormalizeTime(doc.CveMetadata.DateReserved),
 		Metrics:  map[string]model.Metric{},
 		CNATitle: doc.Containers.CNA.Title,
 	}
@@ -305,8 +305,8 @@ func ParseCVEListV5(raw []byte) (*model.CVE, error) {
 	if year, ok := yearOf(id); ok {
 		c.Year = year
 	}
-	c.Published = doc.CveMetadata.DatePublished
-	c.Modified = doc.CveMetadata.DateUpdated
+	c.Published = model.NormalizeTime(doc.CveMetadata.DatePublished)
+	c.Modified = model.NormalizeTime(doc.CveMetadata.DateUpdated)
 	for _, d := range doc.Containers.CNA.Descriptions {
 		if strings.EqualFold(d.Lang, "en") && strings.TrimSpace(d.Value) != "" {
 			c.Summary = strings.TrimSpace(d.Value)

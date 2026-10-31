@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -823,6 +824,32 @@ func (d *DB) CWESearch(ctx context.Context, terms string, limit int) ([]CWEInfo,
 	return out, nil
 }
 
+// CWENames resolves CWE ids to catalog names. Unknown ids are absent from the
+// result rather than mapped to an empty name.
+func (d *DB) CWENames(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT id, name FROM cwe WHERE id IN `+inClause(len(ids)), anyArgs(ids)...)
+	if err != nil {
+		return nil, fmt.Errorf("store: cwe names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("store: cwe names: %w", err)
+		}
+		out[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: cwe names: %w", err)
+	}
+	return out, nil
+}
+
 // Stats is the corpus summary printed by `cv3 stats`.
 type Stats struct {
 	CVEs        int
@@ -916,4 +943,64 @@ func (d *DB) Stats(ctx context.Context) (*Stats, error) {
 	}
 	s.SourceState = sources
 	return s, nil
+}
+
+// validSeverities are the qualitative bands the store can filter on.
+var validSeverities = map[string]bool{
+	"none": true, "low": true, "medium": true, "high": true, "critical": true,
+}
+
+// ParseSeverity normalises one severity name, rejecting anything outside the
+// stored vocabulary.
+func ParseSeverity(s string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if !validSeverities[v] {
+		return "", fmt.Errorf("store: unknown severity %q (none, low, medium, high, critical)", s)
+	}
+	return v, nil
+}
+
+// ParseCVSSVersion maps a user-facing CVSS version ("v2", "v3.0", "v3.1",
+// "v4.0", also accepting the column suffixes v30/v31/v40) to a column selector.
+func ParseCVSSVersion(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "best":
+		return "", nil
+	case "v2", "2", "2.0":
+		return model.VerV2, nil
+	case "v3.0", "3.0", "v30":
+		return model.VerV30, nil
+	case "v3.1", "3.1", "v31":
+		return model.VerV31, nil
+	case "v4.0", "4.0", "v40", "v4":
+		return model.VerV40, nil
+	}
+	return "", fmt.Errorf("store: unknown cvss version %q (v2, v3.0, v3.1, v4.0)", s)
+}
+
+// ParseYearRange parses "2024" or "2020-2024". An empty string means no filter.
+func ParseYearRange(s string) (int, int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, 0, nil
+	}
+	if i := strings.IndexByte(s, '-'); i > 0 {
+		from, err := strconv.Atoi(strings.TrimSpace(s[:i]))
+		if err != nil {
+			return 0, 0, fmt.Errorf("store: bad year range %q", s)
+		}
+		to, err := strconv.Atoi(strings.TrimSpace(s[i+1:]))
+		if err != nil {
+			return 0, 0, fmt.Errorf("store: bad year range %q", s)
+		}
+		if from > to {
+			return 0, 0, fmt.Errorf("store: year range %q is backwards", s)
+		}
+		return from, to, nil
+	}
+	y, err := strconv.Atoi(s)
+	if err != nil || y < 1999 || y > 3000 {
+		return 0, 0, fmt.Errorf("store: bad year %q", s)
+	}
+	return y, y, nil
 }

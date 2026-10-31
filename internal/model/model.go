@@ -2,7 +2,12 @@
 // ingest, storage and report layers.
 package model
 
-import "github.com/fr0g-66723067-io/cv3/internal/cpe"
+import (
+	"strings"
+	"time"
+
+	"github.com/fr0g-66723067-io/cv3/internal/cpe"
+)
 
 // CVSS version keys used in CVE.Metrics and by the store column suffixes.
 const (
@@ -112,6 +117,32 @@ func (m Metric) Rank() int {
 func (c *CVE) Metric(version string) (Metric, bool) {
 	m, ok := c.Metrics[version]
 	return m, ok
+}
+
+// timeLayouts are the upstream timestamp shapes: cvelistV5 uses millisecond
+// precision and a trailing Z, the NVD feeds omit the zone.
+var timeLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.999999",
+	"2006-01-02T15:04:05",
+	"2006-01-02",
+}
+
+// NormalizeTime rewrites an upstream timestamp as RFC 3339 UTC seconds so that
+// published/modified comparisons are string comparisons. Unparsable values are
+// returned unchanged rather than dropped.
+func NormalizeTime(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, layout := range timeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	return s
 }
 
 // CWE is one entry of the MITRE CWE catalog.

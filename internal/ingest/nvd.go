@@ -170,8 +170,8 @@ func fromNVD(n nvdCVE) *model.CVE {
 		ID:        n.ID,
 		State:     "UNKNOWN", // cvelistV5 owns record state; NVD has none
 		NVDStatus: n.VulnStatus,
-		Published: n.Published,
-		Modified:  n.LastModified,
+		Published: model.NormalizeTime(n.Published),
+		Modified:  model.NormalizeTime(n.LastModified),
 		Assigner:  n.SourceIdentifier,
 		Metrics:   map[string]model.Metric{},
 		Enriched:  true,
@@ -224,8 +224,8 @@ func fromNVD(n nvdCVE) *model.CVE {
 	}
 	if strings.TrimSpace(n.ExploitAdd) != "" || strings.TrimSpace(n.VulnerabilityName) != "" {
 		c.KEV = &model.KEV{
-			Added:      n.ExploitAdd,
-			Due:        n.ActionDue,
+			Added:      model.NormalizeTime(n.ExploitAdd),
+			Due:        model.NormalizeTime(n.ActionDue),
 			Name:       n.VulnerabilityName,
 			Ransomware: "",
 		}
