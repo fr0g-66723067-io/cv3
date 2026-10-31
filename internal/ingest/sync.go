@@ -211,7 +211,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	// feeds were fetched concurrently while the base corpus was parsed.
 	nvdTimestamp := ""
 	for year := o.YearsFrom; year <= o.YearsTo; year++ {
-		failed, ts, err := ingestFeed(ctx, o, w, fmt.Sprint(year), log)
+		failed, ts, err := ingestFeed(ctx, o, w, fmt.Sprint(year), false, log)
 		if err != nil {
 			return fail(err)
 		}
@@ -219,7 +219,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 		nvdTimestamp = ts
 	}
 	for _, name := range []string{"recent", "modified"} {
-		failed, ts, err := ingestFeed(ctx, o, w, name, log)
+		failed, ts, err := ingestFeed(ctx, o, w, name, false, log)
 		if err != nil {
 			return fail(err)
 		}
@@ -343,10 +343,15 @@ func feedWatermark(ts string) string {
 // ingestFeed downloads and applies one NVD feed (a year, "recent" or
 // "modified"). It returns the number of unparsable records and the feed's own
 // timestamp, which becomes the NVD watermark.
-func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, log io.Writer) (failed int, timestamp string, err error) {
+func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, fresh bool, log io.Writer) (failed int, timestamp string, err error) {
 	url := o.FeedURL(name)
 	dest := feedDest(o, name)
-	if err := o.Fetcher.Get(ctx, url, dest, log); err != nil {
+	if fresh {
+		err = o.Fetcher.GetFresh(ctx, url, dest, log)
+	} else {
+		err = o.Fetcher.Get(ctx, url, dest, log)
+	}
+	if err != nil {
 		return 0, "", err
 	}
 	if !o.KeepCache {
@@ -474,7 +479,7 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 
 	nvdTimestamp := ""
 	for _, name := range []string{"modified", "recent"} {
-		failed, ts, err := ingestFeed(ctx, o, w, name, log)
+		failed, ts, err := ingestFeed(ctx, o, w, name, true, log)
 		if err != nil {
 			return sum, err
 		}

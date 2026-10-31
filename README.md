@@ -32,8 +32,16 @@ make bench
 | [CWE catalog](https://cwe.mitre.org/data/downloads.html) | CWE names, descriptions, parents | 2.1 MB zip |
 
 Nothing is extracted to disk: the zip and gzip streams are parsed in place. The
+daily all-CVEs asset is itself a zip containing `cves.zip`, so that one nested
+archive is unwrapped through a temporary file in the cache directory. The
 resulting database is expected to be 2-3 GiB; `cv3 sync` refuses to start with
 less than 8 GiB free in the database directory.
+
+Downloads land in `<db dir>/cache` and are reused: an interrupted `cv3 sync`
+resumes where it stopped instead of fetching 900 MB again. Pass `-refresh` to
+re-download anyway, and `-keep-cache` to keep the archives after a successful
+run. NVD serves roughly 200 KB/s per connection, so the feeds are prefetched in
+parallel while the cvelistV5 archive is parsed.
 
 NVD feeds lag publication (measured 2026-10-30: 390 of 2 514 recently changed
 `CVE-2026-*` ids were absent from the NVD 2026 feed). Those CVEs still appear in

@@ -49,13 +49,25 @@ func (f *Fetcher) delays() []time.Duration {
 	return []time.Duration{2 * time.Second, 8 * time.Second, 30 * time.Second}
 }
 
-// Get downloads url to dest. Downloading into dest+".part" and renaming on
-// success means a truncated file is never mistaken for a complete one.
+// Get downloads url to dest unless the cache already holds it. Downloading into
+// dest+".part" and renaming on success means a truncated file is never mistaken
+// for a complete one.
 func (f *Fetcher) Get(ctx context.Context, url, dest string, log io.Writer) error {
+	return f.get(ctx, url, dest, log, f.Force)
+}
+
+// GetFresh always downloads. Rolling feeds (nvdcve-2.0-modified.json.gz and
+// -recent.json.gz) are re-published under the same file name, so a cache hit
+// there would silently replay stale data.
+func (f *Fetcher) GetFresh(ctx context.Context, url, dest string, log io.Writer) error {
+	return f.get(ctx, url, dest, log, true)
+}
+
+func (f *Fetcher) get(ctx context.Context, url, dest string, log io.Writer, force bool) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return fmt.Errorf("ingest: fetch: %w", err)
 	}
-	if !f.Force {
+	if !force {
 		if fi, err := os.Stat(dest); err == nil && fi.Size() > 0 {
 			if log != nil {
 				fmt.Fprintf(log, "cv3: cached %s (%d bytes)\n", filepath.Base(dest), fi.Size())

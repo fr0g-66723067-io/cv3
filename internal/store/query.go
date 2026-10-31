@@ -194,8 +194,10 @@ func (d *DB) fillCWEs(ctx context.Context, hits []Hit) error {
 		ids[i] = hits[i].ID
 		idx[hits[i].ID] = i
 	}
+	// DISTINCT: a CWE stated by both sources is one row per (cve, cwe, src), and
+	// a hit lists identifiers, not provenance.
 	rows, err := d.db.QueryContext(ctx,
-		`SELECT cve_id, cwe_id FROM cve_cwe WHERE cve_id IN `+inClause(len(ids))+` ORDER BY cwe_id`,
+		`SELECT DISTINCT cve_id, cwe_id FROM cve_cwe WHERE cve_id IN `+inClause(len(ids))+` ORDER BY cwe_id`,
 		anyArgs(ids)...)
 	if err != nil {
 		return fmt.Errorf("store: hit cwes: %w", err)
