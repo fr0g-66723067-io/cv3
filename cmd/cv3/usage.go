@@ -22,8 +22,9 @@ search flags:
   -after YYYY-MM-DD   -before YYYY-MM-DD
   -sort relevance|score|date|id        -limit 20   -offset 0   -or   -json
 
-Database path: -db, else $CV3_DB, else $XDG_DATA_HOME/cv3/cv3.db, else
-~/.local/share/cv3/cv3.db. The download cache lives beside it in cache/.
+Database path: -db, else $CV3_DB, else ./data/cv3.db when that file exists,
+else $XDG_DATA_HOME/cv3/cv3.db, else ~/.local/share/cv3/cv3.db. The download
+cache lives beside it in cache/.
 
 Exit codes: 0 success, 1 no results / not found, 2 usage error, 3 database or
 data error.

@@ -32,7 +32,10 @@
 // # Storage
 //
 // A single SQLite database (pure Go, no cgo) holds relational tables for
-// structured queries and an FTS5 index for full-text search. A full sync is
+// structured queries and an FTS5 index for full-text search. Its path comes
+// from -db, then $CV3_DB, then ./data/cv3.db when that file exists, then the XDG
+// data directory, so a synced checkout needs no flags and an installed binary
+// does not write into whatever directory it happens to run from. A full sync is
 // built into a new file and renamed into place, so an interrupted sync never
 // damages a working database. Expect 2-3 GiB on disk and 10-30 minutes for a
 // full sync.

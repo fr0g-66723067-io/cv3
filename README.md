@@ -15,13 +15,20 @@ cv3 stats     # corpus size, coverage, source watermarks
 cv3 serve     # local JSON API on 127.0.0.1:8080
 ```
 
-Build and test:
+Build, test and install:
 
 ```
 make build      # ./cv3
 make check vet test
 make bench
+make install    # -> $(PREFIX)/bin/cv3, PREFIX defaults to ~/.local
+make uninstall
 ```
+
+The database is not installed: it is 2.4 GiB, is rebuilt by `cv3 sync`, and is
+resolved at run time from `-db`, then `$CV3_DB`, then `./data/cv3.db` when that
+file exists, then `$XDG_DATA_HOME/cv3/cv3.db`. A checkout that has synced needs
+no flags; an installed binary run elsewhere uses the XDG location.
 
 ## Data sources
 

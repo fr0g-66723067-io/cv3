@@ -117,7 +117,11 @@ func anySet(fs *flag.FlagSet, names ...string) bool {
 	return false
 }
 
-// resolveDB applies the database path precedence.
+// resolveDB applies the database path precedence: the -db flag, then $CV3_DB,
+// then a project-local ./data/cv3.db when one already exists, and finally the
+// XDG data directory. A checkout that has synced keeps working with no flags,
+// while an installed binary used elsewhere stores its database under the user's
+// data directory instead of littering the working directory.
 func resolveDB(flagVal string) (string, error) {
 	if flagVal != "" {
 		return filepath.Abs(flagVal)
@@ -125,12 +129,17 @@ func resolveDB(flagVal string) (string, error) {
 	if v := os.Getenv("CV3_DB"); v != "" {
 		return filepath.Abs(v)
 	}
+	if local, err := filepath.Abs(filepath.Join("data", "cv3.db")); err == nil {
+		if fi, statErr := os.Stat(local); statErr == nil && !fi.IsDir() {
+			return local, nil
+		}
+	}
 	if v := os.Getenv("XDG_DATA_HOME"); v != "" {
 		return filepath.Join(v, "cv3", "cv3.db"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("cannot locate a database: no -db, no CV3_DB and no home directory")
+		return "", fmt.Errorf("cannot locate a database: no -db, no CV3_DB, no ./data/cv3.db and no home directory")
 	}
 	return filepath.Join(home, ".local", "share", "cv3", "cv3.db"), nil
 }

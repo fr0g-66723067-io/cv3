@@ -26,7 +26,13 @@ const (
 // its path. The returned database is closed; open it with store.Open.
 func Build(t testing.TB) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "cv3.db")
+	return BuildAt(t, filepath.Join(t.TempDir(), "cv3.db"))
+}
+
+// BuildAt writes the same corpus to an explicit path, for tests that care where
+// the database lives.
+func BuildAt(t testing.TB, path string) string {
+	t.Helper()
 	w, err := store.Create(path)
 	if err != nil {
 		t.Fatalf("storetest: create: %v", err)
