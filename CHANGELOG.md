@@ -15,7 +15,10 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   without a state and NVD-only rows carry.
 - **The README stops claiming every command takes `-json`**: `serve` answers JSON
   only, `version`/`help` take no flags. The documented `/v1/search` parameters
-  gain `after`, `before` and `or`, which the server already accepted.
+  gain `after`, `before` and `or`, which the server already accepted. Its
+  versioning paragraph now says `@latest` resolves to the newest tag and that a
+  commit on `main` past it is a pseudo-version, instead of implying `@latest`
+  itself is one.
 - **`cv3 help` and README name the `none` severity band**, which the store accepts
   alongside `low,medium,high,critical`, and say that `-limit` is capped at 500 on
   every command.

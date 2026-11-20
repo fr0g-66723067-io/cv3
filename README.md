@@ -160,8 +160,9 @@ data error.
 cv3 is versioned with semantic import versioning: `v0.x` releases declare no
 compatibility promise, and a tag is the release unit — `go install
 github.com/fr0g-66723067-io/cv3/cmd/cv3@v0.1.2` pins the CLI, the JSON schema and
-the database schema together, and the undeclared `@latest` pseudo-version of
-`main` is not a release. Every tag's notes live in [CHANGELOG.md](CHANGELOG.md).
+the database schema together. `@latest` resolves to the newest tag; a commit on
+`main` past that tag is a pseudo-version, not a release. Every tag's notes live
+in [CHANGELOG.md](CHANGELOG.md).
 
 Two constants come from the data rather than this module's code:
 
