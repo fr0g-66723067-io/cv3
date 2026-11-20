@@ -5,6 +5,18 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cv3 help` matches the flags every command takes.** `-db PATH` is listed on
+  `search`, `get`, `cpe`, `cwe`, `stats` and `serve` (it was only on `sync` and
+  `update`), `-workers N` is listed on `cv3 update` (it was accepted and honored
+  but undocumented), `-years` now says it is `cv3 sync`-only and that
+  `cv3 update` rejects it, and `-state` names `UNKNOWN`, which cvelistV5 records
+  without a state and NVD-only rows carry.
+- **The README stops claiming every command takes `-json`**: `serve` answers JSON
+  only, `version`/`help` take no flags. The documented `/v1/search` parameters
+  gain `after`, `before` and `or`, which the server already accepted.
+
 ## [0.1.2] - 2026-11-20
 
 ### Fixed

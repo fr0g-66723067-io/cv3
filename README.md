@@ -109,7 +109,8 @@ cv3 search -no-nvd                       # only records NVD never enriched
 
 Structured filters: `-severity -min-score -max-score -cvss -cwe -vendor
 -product -year -state -status -kev -no-nvd -after -before -sort -limit -offset
--or`. Every command accepts `-json`.
+-or`. Every query command accepts `-json`, as do `sync` and `update`; `serve`
+answers JSON only, and `version`/`help` take no flags.
 
 ```
 cv3 get CVE-2024-3094
@@ -138,7 +139,7 @@ Read-only JSON, same schema as `-json` (`"schemaVersion": "1"`):
 
 ```
 GET /healthz
-GET /v1/search?q=&severity=&minScore=&maxScore=&cvss=&cwe=&vendor=&product=&year=&state=&status=&kev=&noNvd=&sort=&limit=&offset=
+GET /v1/search?q=&severity=&minScore=&maxScore=&cvss=&cwe=&vendor=&product=&year=&state=&status=&kev=&noNvd=&after=&before=&or=&sort=&limit=&offset=
 GET /v1/cve/{id}
 GET /v1/cpe?vendor=&product=&version=&part=&cpe=&limit=
 GET /v1/cwe/{id}
@@ -155,7 +156,7 @@ data error.
 
 cv3 is versioned with semantic import versioning: `v0.x` releases declare no
 compatibility promise, and a tag is the release unit — `go install
-github.com/fr0g-66723067-io/cv3/cmd/cv3@v0.1.1` pins the CLI, the JSON schema and
+github.com/fr0g-66723067-io/cv3/cmd/cv3@v0.1.2` pins the CLI, the JSON schema and
 the database schema together, and the undeclared `@latest` pseudo-version of
 `main` is not a release. Every tag's notes live in [CHANGELOG.md](CHANGELOG.md).
 
