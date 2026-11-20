@@ -5,6 +5,15 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`cv3 stats -severity`** (repeatable, same bands as `search`) reports the
+  corpus figures for the chosen bands: records, enrichment, state, KEV,
+  references, CPE matches, CNA products, FTS rows, and the year and severity
+  breakdowns are scoped; the CWE catalog size and database metadata stay global.
+  `GET /v1/stats?severity=` takes the same filter, and the `unknown` band — a
+  record with no CVSS metric — is now selectable in both.
+
 ## [0.1.4] - 2026-11-20
 
 ### Changed

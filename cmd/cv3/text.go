@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/fr0g-66723067-io/cv3/internal/report"
@@ -218,6 +219,9 @@ func writeStatsText(w io.Writer, s report.StatsDoc) error {
 	fmt.Fprintf(tw, "database:\t%s\n", s.DBPath)
 	fmt.Fprintf(tw, "size:\t%s\n", humanBytes(s.DBSize))
 	fmt.Fprintf(tw, "built:\t%s\n", orDash(s.BuiltAt))
+	if len(s.Severities) > 0 {
+		fmt.Fprintf(tw, "severity filter:\t%s\n", strings.Join(s.Severities, ", "))
+	}
 	fmt.Fprintf(tw, "cves:\t%d\n", s.CVEs)
 	fmt.Fprintf(tw, "  nvd enriched:\t%d\n", s.Enriched)
 	fmt.Fprintf(tw, "  cvelistV5 only:\t%d\n", s.Unenriched)

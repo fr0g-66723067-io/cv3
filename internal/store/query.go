@@ -249,7 +249,7 @@ func (q *SearchQuery) conds() []cond {
 		out = append(out, cond{"c.year <= ?", []any{q.YearsTo}})
 	}
 	if len(q.Severities) > 0 {
-		out = append(out, cond{"c.best_sev IN " + inClause(len(q.Severities)), anyArgs(q.Severities)})
+		out = append(out, cond{"c.best_sev IN " + inClause(len(q.Severities)), severityArgs(q.Severities)})
 	}
 	if len(q.States) > 0 {
 		out = append(out, cond{"c.state IN " + inClause(len(q.States)), anyArgs(q.States)})
@@ -859,42 +859,66 @@ type Stats struct {
 	DBSize      int64
 	DBPath      string
 	BuiltAt     string
+	Severities  []string // severity filter; empty for the whole corpus
 	SourceState map[string]string
 	ByYear      map[int]int
 	BySeverity  map[string]int
 }
 
-// Stats queries the corpus summary.
-func (d *DB) Stats(ctx context.Context) (*Stats, error) {
+// StatsFilter narrows the corpus statistics. An empty Severities list counts
+// every record.
+type StatsFilter struct {
+	Severities []string
+}
+
+// Stats queries the corpus summary. With a severity filter every CVE-derived
+// figure — records, enrichment, state, KEV, references, CPE matches, CNA
+// products, FTS rows, and the year and severity breakdowns — counts only the
+// matching records; the CWE catalog size and the database metadata stay global.
+func (d *DB) Stats(ctx context.Context, f StatsFilter) (*Stats, error) {
 	s := &Stats{
 		DBPath:      d.path,
 		DBSize:      d.FileSize(),
+		Severities:  append([]string(nil), f.Severities...),
 		SourceState: map[string]string{},
 		ByYear:      map[int]int{},
 		BySeverity:  map[string]int{},
 	}
+	conds := []string{}
+	if len(f.Severities) > 0 {
+		conds = append(conds, "c.best_sev IN "+inClause(len(f.Severities)))
+	}
+	args := severityArgs(f.Severities)
+	sql := func(base string, extra ...string) string {
+		parts := append(append([]string(nil), conds...), extra...)
+		if len(parts) == 0 {
+			return base
+		}
+		return base + " WHERE " + strings.Join(parts, " AND ")
+	}
 	counts := []struct {
-		dst *int
-		sql string
+		dst   *int
+		query string
 	}{
-		{&s.CVEs, `SELECT count(*) FROM cve`},
-		{&s.Enriched, `SELECT count(*) FROM cve WHERE enriched = 1`},
-		{&s.Unenriched, `SELECT count(*) FROM cve WHERE enriched = 0`},
-		{&s.Rejected, `SELECT count(*) FROM cve WHERE state = 'REJECTED'`},
-		{&s.Reserved, `SELECT count(*) FROM cve WHERE state = 'RESERVED'`},
-		{&s.KEV, `SELECT count(*) FROM cve WHERE kev = 1`},
-		{&s.CPEMatches, `SELECT count(*) FROM cpe_match`},
-		{&s.CVEProducts, `SELECT count(*) FROM cve_product`},
+		{&s.CVEs, sql(`SELECT count(*) FROM cve c`)},
+		{&s.Enriched, sql(`SELECT count(*) FROM cve c`, "c.enriched = 1")},
+		{&s.Unenriched, sql(`SELECT count(*) FROM cve c`, "c.enriched = 0")},
+		{&s.Rejected, sql(`SELECT count(*) FROM cve c`, "c.state = 'REJECTED'")},
+		{&s.Reserved, sql(`SELECT count(*) FROM cve c`, "c.state = 'RESERVED'")},
+		{&s.KEV, sql(`SELECT count(*) FROM cve c`, "c.kev = 1")},
+		{&s.CPEMatches, sql(`SELECT count(*) FROM cpe_match m JOIN cve c ON c.id = m.cve_id`)},
+		{&s.CVEProducts, sql(`SELECT count(*) FROM cve_product p JOIN cve c ON c.id = p.cve_id`)},
 		{&s.CWECatalog, `SELECT count(*) FROM cwe`},
-		{&s.Refs, `SELECT count(*) FROM cve_ref`},
-		{&s.FTSRows, `SELECT count(*) FROM cve_fts`},
+		{&s.Refs, sql(`SELECT count(*) FROM cve_ref r JOIN cve c ON c.id = r.cve_id`)},
+		{&s.FTSRows, sql(`SELECT count(*) FROM cve_fts f JOIN cve c ON c.rowid = f.rowid`)},
 	}
 	for _, c := range counts {
-		if err := d.db.QueryRowContext(ctx, c.sql).Scan(c.dst); err != nil {
+		if err := d.db.QueryRowContext(ctx, c.query, args...).Scan(c.dst); err != nil {
 			return nil, fmt.Errorf("store: stats: %w", err)
 		}
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT year, count(*) FROM cve GROUP BY year ORDER BY year`)
+	rows, err := d.db.QueryContext(ctx,
+		sql(`SELECT c.year, count(*) FROM cve c`)+` GROUP BY c.year ORDER BY c.year`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: stats: %w", err)
 	}
@@ -908,7 +932,7 @@ func (d *DB) Stats(ctx context.Context) (*Stats, error) {
 	}
 	rows.Close()
 	rows, err = d.db.QueryContext(ctx,
-		`SELECT best_sev, count(*) FROM cve GROUP BY best_sev ORDER BY best_sev`)
+		sql(`SELECT c.best_sev, count(*) FROM cve c`)+` GROUP BY c.best_sev ORDER BY c.best_sev`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: stats: %w", err)
 	}
@@ -941,6 +965,20 @@ func (d *DB) Stats(ctx context.Context) (*Stats, error) {
 // validSeverities are the qualitative bands the store can filter on.
 var validSeverities = map[string]bool{
 	"none": true, "low": true, "medium": true, "high": true, "critical": true,
+	"unknown": true,
+}
+
+// severityArgs maps the band names to the stored values: "unknown" is the band
+// recorded as an empty best_sev, i.e. a record with no CVSS metric at all.
+func severityArgs(bands []string) []any {
+	out := make([]any, len(bands))
+	for i, b := range bands {
+		if b == "unknown" {
+			b = ""
+		}
+		out[i] = b
+	}
+	return out
 }
 
 // ParseSeverity normalises one severity name, rejecting anything outside the
@@ -948,7 +986,7 @@ var validSeverities = map[string]bool{
 func ParseSeverity(s string) (string, error) {
 	v := strings.ToLower(strings.TrimSpace(s))
 	if !validSeverities[v] {
-		return "", fmt.Errorf("store: unknown severity %q (none, low, medium, high, critical)", s)
+		return "", fmt.Errorf("store: unknown severity %q (none, low, medium, high, critical, unknown)", s)
 	}
 	return v, nil
 }

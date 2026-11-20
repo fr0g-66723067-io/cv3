@@ -331,7 +331,17 @@ func (s *server) cweSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) stats(w http.ResponseWriter, r *http.Request) {
-	st, err := s.db.Stats(r.Context())
+	q := r.URL.Query()
+	want := make([]string, 0, 4)
+	for _, raw := range queryValues(q, "severity") {
+		v, err := store.ParseSeverity(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		want = append(want, v)
+	}
+	st, err := s.db.Stats(r.Context(), store.StatsFilter{Severities: want})
 	if err != nil {
 		s.logf("stats: %v", err)
 		writeError(w, http.StatusInternalServerError, err.Error())

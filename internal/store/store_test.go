@@ -449,7 +449,7 @@ func TestStats(t *testing.T) {
 	d := openRO(t, path)
 	ctx := context.Background()
 
-	s, err := d.Stats(ctx)
+	s, err := d.Stats(ctx, StatsFilter{})
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
@@ -467,6 +467,42 @@ func TestStats(t *testing.T) {
 	}
 	if s.DBSize <= 0 {
 		t.Fatalf("db size = %d", s.DBSize)
+	}
+
+	crit, err := d.Stats(ctx, StatsFilter{Severities: []string{"critical"}})
+	if err != nil {
+		t.Fatalf("Stats(critical): %v", err)
+	}
+	if crit.CVEs != 1 || crit.Enriched != 1 || crit.FTSRows != 1 {
+		t.Fatalf("severity-filtered counts = %+v", crit)
+	}
+	if len(crit.BySeverity) != 1 || crit.BySeverity["critical"] != 1 {
+		t.Fatalf("filtered severities = %v", crit.BySeverity)
+	}
+	if crit.ByYear[2024] != 1 || len(crit.ByYear) != 1 {
+		t.Fatalf("filtered years = %v", crit.ByYear)
+	}
+	if crit.CWECatalog != 2 {
+		t.Fatalf("catalog size must stay global, got %d", crit.CWECatalog)
+	}
+	if len(crit.Severities) != 1 || crit.Severities[0] != "critical" {
+		t.Fatalf("filter echo = %v", crit.Severities)
+	}
+
+	// "unknown" is the band of records with no CVSS metric at all.
+	unk, err := d.Stats(ctx, StatsFilter{Severities: []string{"unknown"}})
+	if err != nil {
+		t.Fatalf("Stats(unknown): %v", err)
+	}
+	if unk.CVEs != 1 || unk.BySeverity["unknown"] != 1 {
+		t.Fatalf("unknown band = %+v", unk)
+	}
+	missing, err := d.Stats(ctx, StatsFilter{Severities: []string{"low"}})
+	if err != nil {
+		t.Fatalf("Stats(low): %v", err)
+	}
+	if missing.CVEs != 0 || len(missing.BySeverity) != 0 || len(missing.ByYear) != 0 {
+		t.Fatalf("empty band = %+v", missing)
 	}
 }
 

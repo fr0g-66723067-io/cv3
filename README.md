@@ -121,7 +121,15 @@ cv3 cpe -vendor tukaani -product xz -version 5.6.1
 cv3 cpe -cpe cpe:2.3:o:linux:linux_kernel:-:*:*:*:*:*:*:*
 cv3 cwe CWE-79
 cv3 cwe -search injection
+cv3 stats -severity critical,high        # corpus figures for those bands only
 ```
+
+`cv3 stats -severity` scopes every CVE-derived figure — records, enrichment,
+state, KEV, references, CPE matches, CNA products, FTS rows, and the year and
+severity breakdowns — to the listed bands; the CWE catalog size and the database
+metadata stay global. `-severity` accepts `none, low, medium, high, critical,
+unknown`, where `unknown` is a record with no CVSS metric (the band `cv3 stats`
+labels that way), and repeatable like the search filter.
 
 `cv3 cpe -version` evaluates NVD version ranges (`versionStartIncluding`,
 `versionEndExcluding`, ...) and exact CPE versions. Specify `-product` when you
@@ -147,7 +155,7 @@ GET /v1/cve/{id}
 GET /v1/cpe?vendor=&product=&version=&part=&cpe=&limit=
 GET /v1/cwe/{id}
 GET /v1/cwe?q=
-GET /v1/stats
+GET /v1/stats?severity=
 ```
 
 ## Exit codes

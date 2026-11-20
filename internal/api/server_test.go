@@ -234,4 +234,16 @@ func TestStatsRoute(t *testing.T) {
 	if env.Stats.CVEs != 3 || env.Stats.Enriched != 1 {
 		t.Fatalf("stats = %+v", env.Stats)
 	}
+
+	_, body = get(t, srv, "/v1/stats?severity=critical")
+	crit := decode[report.StatsEnvelope](t, body)
+	if crit.Stats.CVEs != 1 || len(crit.Stats.BySeverity) != 1 || crit.Stats.BySeverity["critical"] != 1 {
+		t.Fatalf("severity=critical stats = %+v", crit.Stats)
+	}
+	if len(crit.Stats.Severities) != 1 || crit.Stats.Severities[0] != "critical" {
+		t.Fatalf("filter echo = %v", crit.Stats.Severities)
+	}
+	if resp, body := get(t, srv, "/v1/stats?severity=bogus"); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("severity=bogus status = %d: %s", resp.StatusCode, body)
+	}
 }

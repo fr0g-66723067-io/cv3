@@ -414,6 +414,7 @@ type StatsDoc struct {
 	DBSize      int64             `json:"dbSize"`
 	DBPath      string            `json:"dbPath"`
 	BuiltAt     string            `json:"builtAt,omitempty"`
+	Severities  []string          `json:"severities,omitempty"`
 	SourceState map[string]string `json:"sourceState"`
 	ByYear      map[string]int    `json:"byYear"`
 	BySeverity  map[string]int    `json:"bySeverity"`
@@ -436,6 +437,7 @@ func StatsFromStore(s *store.Stats) StatsDoc {
 		DBSize:      s.DBSize,
 		DBPath:      s.DBPath,
 		BuiltAt:     s.BuiltAt,
+		Severities:  s.Severities,
 		SourceState: s.SourceState,
 		ByYear:      map[string]int{},
 		BySeverity:  s.BySeverity,

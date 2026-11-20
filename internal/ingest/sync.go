@@ -528,7 +528,7 @@ func fillSummary(sum *Summary) error {
 		return err
 	}
 	defer r.Close()
-	st, err := r.Stats(context.Background())
+	st, err := r.Stats(context.Background(), store.StatsFilter{})
 	if err != nil {
 		return err
 	}
