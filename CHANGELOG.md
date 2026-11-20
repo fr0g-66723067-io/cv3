@@ -5,6 +5,17 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-20
+
+### Fixed
+
+- **The module builds on Windows again.** The free-space guard run at the start of
+  `cv3 sync` used `syscall.Statfs`, which does not exist there; it now lives
+  behind `//go:build unix` with a no-op elsewhere, so `go install` and `go build`
+  work on every platform Go supports. CI cross-vets `windows/amd64` and
+  `darwin/arm64` so a platform-specific import cannot land unnoticed again.
+- **The documented Go floor matches `go.mod`**: Go 1.27.3, not "1.27 or newer".
+
 ## [0.1.0] - 2026-11-20
 
 ### Added
