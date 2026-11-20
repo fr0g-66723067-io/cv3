@@ -28,7 +28,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usage)
 		return exitOK
 	case "version":
-		fmt.Fprintf(stdout, "cv3 %s (%s)\n", version, commit)
+		v, c := buildStamp()
+		fmt.Fprintf(stdout, "cv3 %s (%s)\n", v, c)
 		return exitOK
 	case "sync":
 		return runSync(rest, stdout, stderr)
