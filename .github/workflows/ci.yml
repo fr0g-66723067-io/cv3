@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs of the same branch/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: fmt, vet, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+
+      - name: go version
+        run: go version
+
+      # Fails on any unformatted file (gofmt -l .).
+      - name: make check
+        run: make check
+
+      # vet + test + test -race.
+      - name: make all
+        run: make all
+
+      - name: make build
+        run: make build
+
+      # The tag is stamped in here; a build with an empty git context still
+      # prints its dev/none fallback, which is why this only asserts the shape.
+      - name: version
+        run: ./cv3 version

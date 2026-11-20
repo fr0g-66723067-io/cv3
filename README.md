@@ -15,7 +15,18 @@ cv3 stats     # corpus size, coverage, source watermarks
 cv3 serve     # local JSON API on 127.0.0.1:8080
 ```
 
-Build, test and install:
+## Install
+
+Go 1.27 or newer; no cgo, no external service, one dependency
+(`modernc.org/sqlite`, FTS5 compiled in):
+
+```sh
+go install github.com/fr0g-66723067-io/cv3/cmd/cv3@latest   # or: make install
+cv3 sync      # ~900 MB download, ~21 min, 2.4 GiB database
+cv3 stats
+```
+
+## Build, test and install
 
 ```
 make build          # ./cv3
@@ -139,8 +150,53 @@ GET /v1/stats
 `0` success, `1` no results / id not found, `2` usage error, `3` database or
 data error.
 
-## Licensing
+## Versioning and stability
 
-NVD data is public domain (US Government work). cvelistV5 is published under the
-CVE Program's terms (MITRE). The CWE catalog is copyright MITRE, distributed
-under the CWE terms of use. No upstream data is redistributed by this repository.
+cv3 is versioned with semantic import versioning: `v0.x` releases declare no
+compatibility promise, and a tag is the release unit — `go install
+github.com/fr0g-66723067-io/cv3/cmd/cv3@v0.1.0` pins the CLI, the JSON schema and
+the database schema together, and the undeclared `@latest` pseudo-version of
+`main` is not a release. Every tag's notes live in [CHANGELOG.md](CHANGELOG.md).
+
+Two constants come from the data rather than this module's code:
+
+* **Go 1.27** builds the CLI; the single dependency is `modernc.org/sqlite`
+  (pure Go, FTS5 compiled in, no cgo, no external service).
+* **The corpus is not vendored.** `cv3 sync` downloads about 900 MB from NVD,
+  the CVE Program and MITRE and builds a 2.4 GiB database; a tag works against
+  whatever upstream snapshot the operator syncs, and `cv3 stats` reports the
+  exact watermarks it holds.
+
+What a `v0.x` minor bump may change without a major bump: the CLI's output text
+and flags, the JSON payloads (the envelope carries `"schemaVersion": "1"`), the
+SQLite schema (rebuilt by `cv3 sync`; an older binary refuses a newer database),
+and which upstream feeds are ingested. Nothing here is deprecated: there are no
+shims, aliases or compatibility re-exports to carry.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE). Copyright 2026 fr0g <fr0g@66723067.io>
+(see [NOTICE](NOTICE)).
+
+### Attribution
+
+cv3 ingests three upstream datasets and reproduces excerpts of each in `testdata/`:
+
+* **NVD CVE 2.0 feeds** — <https://nvd.nist.gov/vuln/data-feeds>. NVD data is
+  created by employees of the National Institute of Standards and Technology
+  (NIST), an agency of the Federal Government. Pursuant to title 17 United States
+  Code Section 105, works of NIST employees are not subject to copyright
+  protection in the United States. This data/work may be subject to foreign
+  copyright.
+* **CVE Records (cvelistV5)** — <https://github.com/CVEProject/cvelistV5>, published
+  by the CVE Program under its terms of use at
+  <https://www.cve.org/Legal/TermsOfUse>. CVE is a registered trademark and the
+  CVE logo is a trademark of The MITRE Corporation.
+* **CWE catalog** — <https://cwe.mitre.org/>. CWE™ is free to use by any
+  organization or individual for any research, development, and/or commercial
+  purposes; a copy must reproduce MITRE's copyright designation and the CWE Terms
+  of Use. Copyright © 2006–2026, The MITRE Corporation. CWE, CWSS, CWRAF and the
+  CWE logo are trademarks of The MITRE Corporation.
+
+No upstream dataset is redistributed: every database is built locally by
+`cv3 sync`.

@@ -20,12 +20,18 @@ SRCDB    ?= ./data/cv3.db
 SRCCACHE ?= $(dir $(SRCDB))cache
 CACHEDIR ?= $(DATADIR)/cache
 
+# The tag is the release unit; -dirty and the short commit keep a local build
+# honest. Both fall back when git is unavailable (module cache, tarball).
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+LDFLAGS ?= -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+
 .PHONY: all build install uninstall vet test bench fmt check clean
 
 all: check vet test
 
 build:
-	$(GO) build -o $(BIN) ./cmd/cv3
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/cv3
 
 # Installs the binary and puts the database at the path the code expects. A
 # database already in place is never overwritten: an existing corpus is the

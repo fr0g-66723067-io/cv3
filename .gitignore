@@ -1,4 +1,9 @@
+# The built CLI (make build / go build ./cmd/cv3) and the staged sync database.
 /cv3
+*.db.new
+
+# Databases and their journals. The corpus is rebuilt by `cv3 sync`, never
+# committed; root-scoped so that testdata fixtures are not silently ignored.
 /data/
 *.db
 *.db-journal
@@ -6,3 +11,8 @@
 *.db-shm
 *.part
 coverage.out
+
+# Editor and OS droppings.
+.DS_Store
+*~
+*.swp
