@@ -4,3 +4,35 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-11-20
+
+### Added
+
+- **Offline search over the CVE corpus with CVSS, CPE and CWE.** `cv3 sync` builds
+  a 2.4 GiB SQLite database from the cvelistV5 daily release, the NVD CVE 2.0
+  feeds and the MITRE CWE catalog; `cv3 update` applies cvelistV5 hourly deltas
+  plus the rolling NVD `modified`/`recent` feeds. No upstream dataset is
+  redistributed: every database is built locally from the sources.
+- **Seven commands** — `sync`, `update`, `search`, `get`, `cpe`, `cwe`, `stats` —
+  plus `serve`, a read-only JSON API on `127.0.0.1:8080`. `search` takes free text
+  (FTS5, bm25) and the filters `-severity`, `-min-score`, `-max-score`, `-cvss`,
+  `-cwe`, `-vendor`, `-product`, `-year`, `-state`, `-status`, `-kev`, `-no-nvd`,
+  `-after`, `-before`, `-sort`; every command accepts `-json`, and the CLI and
+  HTTP surfaces share one schema (`"schemaVersion": "1"`).
+- **One merged corpus.** cvelistV5 creates the base record; NVD overlays CPE
+  applicability with version ranges, NVD CVSS metrics, KEV flags and
+  `vulnStatus`, so records NVD never enriched keep their CNA CVSS, CWE and CPE.
+  The representative score is the highest CVSS version present (v4.0 > v3.1 >
+  v3.0 > v2.0); CWE identifiers resolve through the catalog.
+- **Pure-Go, no cgo, one dependency** (`modernc.org/sqlite` with FTS5 compiled
+  in). The query path mmaps the database and needs no service; a failed sync
+  never damages a working database, because the build is renamed into place.
+
+### Measured
+
+- Corpus of 2026-10-31: 417 488 CVEs, 3 535 274 CPE match rows, 694 190 CNA
+  products, 984 CWE entries, 1 354 916 references, 2.36 GiB on disk. Full sync
+  21m32s; incremental update 29s–4m9s depending on the rolling feeds.
+- `cv3 search` 5–14 ms wall for a term query, `cv3 get` under 10 ms,
+  `cv3 cpe -vendor … -product … -version …` 30 ms.
