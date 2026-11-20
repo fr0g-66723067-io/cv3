@@ -5,6 +5,15 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-20
+
+### Changed
+
+- **Release-notes correction; no code change.** The 0.1.3 entry described the
+  `-limit` change as documentation only, but 0.1.3 shipped the behaviour change
+  too; the entry now says so. Nothing in the module differs from `v0.1.3`
+  except this file.
+
 ## [0.1.3] - 2026-11-20
 
 ### Fixed
@@ -21,9 +30,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   versioning paragraph now says `@latest` resolves to the newest tag and that a
   commit on `main` past it is a pseudo-version, instead of implying `@latest`
   itself is one.
+- **`cv3 cwe -search` obeys the 500-row page cap.** A limit above 500 used to be
+  treated as "use the default" and returned 25 rows; every listing query now
+  shares `store.ClampLimit`, so `-limit 1000` returns up to 500 rows the way
+  `search` and `cpe` already did.
 - **`cv3 help` and README name the `none` severity band**, which the store accepts
-  alongside `low,medium,high,critical`, and say that `-limit` is capped at 500 on
-  every command.
+  alongside `low,medium,high,critical`, and document the 500-row cap.
 - **`cv3 get` is documented as taking one or more ids**, and its `-json` mode as
   one envelope per record, concatenated into a JSON stream that `jq` reads as a
   sequence.
