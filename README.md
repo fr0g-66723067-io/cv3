@@ -65,8 +65,9 @@ lives beside the database in `cache/`.
 Nothing is extracted to disk: the zip and gzip streams are parsed in place. The
 daily all-CVEs asset is itself a zip containing `cves.zip`, so that one nested
 archive is unwrapped through a temporary file in the cache directory. The
-resulting database is expected to be 2-3 GiB; `cv3 sync` refuses to start with
-less than 8 GiB free in the database directory.
+resulting database is expected to be 2-3 GiB. On unix, `cv3 sync` refuses to
+start with less than 8 GiB free in the database directory; on Windows there is
+no pre-check, and a short disk fails at the first write instead.
 
 Downloads land in `<db dir>/cache` and are reused: an interrupted `cv3 sync`
 resumes where it stopped instead of fetching 900 MB again. Pass `-refresh` to
