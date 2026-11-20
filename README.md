@@ -8,7 +8,7 @@ Program knows about — including the ones NVD never enriched.
 cv3 sync      # full build of the database (network, 10-30 min)
 cv3 update    # apply cvelistV5 hourly deltas + NVD modified/recent feeds
 cv3 search    # full-text + structured filters
-cv3 get       # one record, every source merged
+cv3 get       # one or more records, every source merged
 cv3 cpe       # which CVEs affect vendor/product at version X
 cv3 cwe       # CWE catalog + CVE counts
 cv3 stats     # corpus size, coverage, source watermarks
@@ -110,7 +110,10 @@ cv3 search -no-nvd                       # only records NVD never enriched
 Structured filters: `-severity -min-score -max-score -cvss -cwe -vendor
 -product -year -state -status -kev -no-nvd -after -before -sort -limit -offset
 -or`. Every query command accepts `-json`, as do `sync` and `update`; `serve`
-answers JSON only, and `version`/`help` take no flags.
+answers JSON only, and `version`/`help` take no flags. `-limit` is capped at 500
+on every command. `cv3 get -json` with several ids emits one indented envelope
+per record, back to back: a JSON stream that `jq` reads as a sequence (a
+line-oriented parser will not).
 
 ```
 cv3 get CVE-2024-3094

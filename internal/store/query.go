@@ -73,15 +73,22 @@ type SearchQuery struct {
 }
 
 func (q *SearchQuery) normalize() {
-	if q.Limit <= 0 {
-		q.Limit = 20
-	}
-	if q.Limit > 500 {
-		q.Limit = 500
-	}
+	q.Limit = ClampLimit(q.Limit, 20)
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
+}
+
+// ClampLimit applies the page-size rule shared by every listing query: a
+// non-positive limit takes def, and anything above 500 is capped at 500.
+func ClampLimit(n, def int) int {
+	if n <= 0 {
+		return def
+	}
+	if n > 500 {
+		return 500
+	}
+	return n
 }
 
 // Hit is one search result row.
@@ -263,7 +270,8 @@ func (q *SearchQuery) conds() []cond {
 	if len(q.CWEs) > 0 {
 		out = append(out, cond{
 			"EXISTS (SELECT 1 FROM cve_cwe w WHERE w.cve_id = c.id AND w.cwe_id IN " + inClause(len(q.CWEs)) + ")",
-			anyArgs(q.CWEs)})
+			anyArgs(q.CWEs),
+		})
 	}
 	if len(q.Vendors) > 0 || len(q.Products) > 0 {
 		pm, pa := vendorProductPredicate("m", q.Vendors, q.Products)
@@ -271,7 +279,8 @@ func (q *SearchQuery) conds() []cond {
 		out = append(out, cond{
 			"(EXISTS (SELECT 1 FROM cpe_match m WHERE m.cve_id = c.id AND " + pm + ")" +
 				" OR EXISTS (SELECT 1 FROM cve_product p WHERE p.cve_id = c.id AND " + pp + "))",
-			append(pa, pb...)})
+			append(pa, pb...),
+		})
 	}
 	if q.KEVOnly {
 		out = append(out, cond{"c.kev = 1", nil})
@@ -569,12 +578,7 @@ type CPEHit struct {
 // filtering happens in Go because NVD expresses applicability as range bounds
 // (versionStartIncluding/versionEndExcluding/...) that no index can evaluate.
 func (d *DB) ByCPE(ctx context.Context, f CPEFilter) ([]CPEHit, error) {
-	if f.Limit <= 0 {
-		f.Limit = 100
-	}
-	if f.Limit > 500 {
-		f.Limit = 500
-	}
+	f.Limit = ClampLimit(f.Limit, 100)
 	f.Vendor = strings.ToLower(strings.TrimSpace(f.Vendor))
 	f.Product = strings.ToLower(strings.TrimSpace(f.Product))
 	f.Part = strings.ToLower(strings.TrimSpace(f.Part))
@@ -752,9 +756,7 @@ type CWEInfo struct {
 // CWE loads one catalog entry.
 func (d *DB) CWE(ctx context.Context, id string) (*CWEInfo, error) {
 	id = strings.ToUpper(strings.TrimSpace(id))
-	var (
-		info model.CWE
-	)
+	var info model.CWE
 	err := d.db.QueryRowContext(ctx,
 		`SELECT id, name, abstraction, status, description FROM cwe WHERE id = ?`, id).
 		Scan(&info.ID, &info.Name, &info.Abstraction, &info.Status, &info.Description)
@@ -791,9 +793,7 @@ func (d *DB) CWESearch(ctx context.Context, terms string, limit int) ([]CWEInfo,
 	if terms == "" {
 		return nil, errors.New("store: cwe search: empty terms")
 	}
-	if limit <= 0 || limit > 500 {
-		limit = 25
-	}
+	limit = ClampLimit(limit, 25)
 	like := "%" + terms + "%"
 	rows, err := d.db.QueryContext(ctx,
 		`SELECT id, name, abstraction, status, description FROM cwe

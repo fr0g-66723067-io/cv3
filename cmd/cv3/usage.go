@@ -18,15 +18,18 @@ Usage:
 deltas and the rolling NVD feeds, and rejects -years.
 
 search flags:
-  -db PATH                              database path
-  -severity low,medium,high,critical    -min-score F   -max-score F
-  -cvss v2|v3.0|v3.1|v4.0               -cwe CWE-79 (repeatable)
-  -vendor V (repeatable)                -product P (repeatable)
+  -db PATH                                  database path
+  -severity none,low,medium,high,critical   -min-score F   -max-score F
+  -cvss v2|v3.0|v3.1|v4.0                   -cwe CWE-79 (repeatable)
+  -vendor V (repeatable)                    -product P (repeatable)
   -year 2024 | -year 2020-2024
   -state PUBLISHED,REJECTED,RESERVED,UNKNOWN
-  -status "Awaiting Analysis"           -kev   -no-nvd
+  -status "Awaiting Analysis"               -kev   -no-nvd
   -after YYYY-MM-DD   -before YYYY-MM-DD
-  -sort relevance|score|date|id         -limit 20   -offset 0   -or   -json
+  -sort relevance|score|date|id             -limit 20   -offset 0   -or   -json
+
+-limit is capped at 500 on every command. -json on 'cv3 get' emits one envelope
+per id, concatenated (a JSON stream; jq reads it as a sequence).
 
 Database path: -db, else $CV3_DB, else $XDG_DATA_HOME/cv3/cv3.db, else
 ~/.local/share/cv3/cv3.db. 'make install' puts the database at that default.

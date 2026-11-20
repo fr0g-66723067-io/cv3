@@ -121,16 +121,6 @@ func first(q map[string][]string, key string) string {
 	return ""
 }
 
-func clampLimit(n, def int) int {
-	if n <= 0 {
-		return def
-	}
-	if n > 500 {
-		return 500
-	}
-	return n
-}
-
 func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	ctx := r.Context()
@@ -201,7 +191,7 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	limit = clampLimit(limit, 20)
+	limit = store.ClampLimit(limit, 20)
 	query.Limit, query.Offset = limit, offset
 
 	res, err := s.db.Search(ctx, query)
@@ -281,7 +271,7 @@ func (s *server) cpe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	filter.Limit = clampLimit(limit, 100)
+	filter.Limit = store.ClampLimit(limit, 100)
 
 	hits, err := s.db.ByCPE(r.Context(), filter)
 	if err != nil {
@@ -326,7 +316,7 @@ func (s *server) cweSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	limit = clampLimit(limit, 25)
+	limit = store.ClampLimit(limit, 25)
 	infos, err := s.db.CWESearch(r.Context(), terms, limit)
 	if err != nil {
 		s.logf("cwe?q=%s: %v", terms, err)

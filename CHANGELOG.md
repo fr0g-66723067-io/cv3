@@ -16,6 +16,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **The README stops claiming every command takes `-json`**: `serve` answers JSON
   only, `version`/`help` take no flags. The documented `/v1/search` parameters
   gain `after`, `before` and `or`, which the server already accepted.
+- **`cv3 help` and README name the `none` severity band**, which the store accepts
+  alongside `low,medium,high,critical`, and say that `-limit` is capped at 500 on
+  every command.
+- **`cv3 get` is documented as taking one or more ids**, and its `-json` mode as
+  one envelope per record, concatenated into a JSON stream that `jq` reads as a
+  sequence.
 
 ## [0.1.2] - 2026-11-20
 

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -87,11 +88,15 @@ func buildDB(t *testing.T, dir string) string {
 		t.Fatalf("UpsertCVEAll: %v", err)
 	}
 	if err := w.PutCWEAll(ctx, []*model.CWE{
-		{ID: "CWE-506", Name: "Embedded Malicious Code", Abstraction: "Base", Status: "Incomplete",
-			Description: "The product contains code that appears to be malicious."},
-		{ID: "CWE-79", Name: "Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+		{
+			ID: "CWE-506", Name: "Embedded Malicious Code", Abstraction: "Base", Status: "Incomplete",
+			Description: "The product contains code that appears to be malicious.",
+		},
+		{
+			ID: "CWE-79", Name: "Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
 			Abstraction: "Base", Status: "Stable", Description: "The product does not neutralize user-controllable input.",
-			Parents: []string{"CWE-74"}},
+			Parents: []string{"CWE-74"},
+		},
 	}); err != nil {
 		w.Close()
 		t.Fatalf("PutCWEAll: %v", err)
@@ -553,5 +558,52 @@ func TestStateTransition(t *testing.T) {
 	}
 	if !c.Enriched || c.NVDStatus != "Rejected" {
 		t.Fatalf("enrichment = %v/%q", c.Enriched, c.NVDStatus)
+	}
+}
+
+// TestCWESearchLimitCap pins the shared page-size rule: a limit above 500 is
+// capped at 500, not silently reset to the 25 default.
+func TestCWESearchLimitCap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cv3.db")
+	d, err := Create(path)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	ctx := context.Background()
+	entries := make([]*model.CWE, 0, 600)
+	for i := 0; i < 600; i++ {
+		entries = append(entries, &model.CWE{
+			ID:          fmt.Sprintf("CWE-%d", 1000+i),
+			Name:        "Shared Weakness",
+			Abstraction: "Base",
+			Status:      "Stable",
+			Description: "every entry matches the same search terms",
+		})
+	}
+	if err := d.PutCWEAll(ctx, entries); err != nil {
+		t.Fatalf("PutCWEAll: %v", err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	ro, err := Open(path, true)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer ro.Close()
+
+	got, err := ro.CWESearch(ctx, "same search terms", 1000)
+	if err != nil {
+		t.Fatalf("CWESearch: %v", err)
+	}
+	if len(got) != 500 {
+		t.Fatalf("CWESearch(limit=1000) returned %d rows, want the 500 cap", len(got))
+	}
+	def, err := ro.CWESearch(ctx, "same search terms", 0)
+	if err != nil {
+		t.Fatalf("CWESearch default: %v", err)
+	}
+	if len(def) != 25 {
+		t.Fatalf("CWESearch(limit=0) returned %d rows, want the 25 default", len(def))
 	}
 }
