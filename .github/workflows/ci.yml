@@ -35,6 +35,13 @@ jobs:
       - name: make build
         run: make build
 
+      # The module must vet where syscall.Statfs does not exist: a linux-only job
+      # cannot see a platform-specific import land.
+      - name: cross-vet (windows, darwin)
+        run: |
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=darwin  GOARCH=arm64 go vet ./...
+
       # The tag is stamped in here; a build with an empty git context still
       # prints its dev/none fallback, which is why this only asserts the shape.
       - name: version

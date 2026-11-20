@@ -2,6 +2,10 @@
 /cv3
 *.db.new
 
+# `go build` inside cmd/cv3 drops the binary there too (gr4ph ignores the same
+# path for its CLI).
+/cmd/cv3/cv3
+
 # Databases and their journals. The corpus is rebuilt by `cv3 sync`, never
 # committed; root-scoped so that testdata fixtures are not silently ignored.
 /data/
