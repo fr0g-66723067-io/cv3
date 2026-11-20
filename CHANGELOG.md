@@ -5,6 +5,16 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-20
+
+### Fixed
+
+- **`cv3 version` names the tag on `go install` builds.** Both values came only
+  from `-ldflags`, so a binary installed with `go install …@v0.1.1` reported
+  `cv3 dev (none)`. The command now falls back to the module version and VCS
+  revision Go embeds in the binary; the Makefile's stamps still win, and a dirty
+  local build says so.
+
 ## [0.1.1] - 2026-11-20
 
 ### Fixed
