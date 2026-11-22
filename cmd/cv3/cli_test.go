@@ -282,3 +282,53 @@ func TestCLITextEscapesImportedControls(t *testing.T) {
 		t.Fatalf("JSON summary lost the raw value: %q", env.CVE.Summary)
 	}
 }
+
+// TestCLIJSONPreservesControlRunes guards the JSON path from the terminal
+// escaper: encoding/json leaves DEL and C1 runes unescaped, so a text-only
+// output filter must never rewrite bytes inside a JSON document.
+func TestCLIJSONPreservesControlRunes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cv3.db")
+	w, err := store.Create(path)
+	if err != nil {
+		t.Fatalf("store.Create: %v", err)
+	}
+	ctx := context.Background()
+	const summary = "safe\u007fDEL\u009bC1"
+	if err := w.UpsertCVEAll(ctx, []*model.CVE{{
+		ID:         "CVE-2024-9998",
+		State:      "PUBLISHED",
+		Published:  "2024-01-01T00:00:00Z",
+		Summary:    summary,
+		SummarySrc: "cna",
+	}}); err != nil {
+		w.Close()
+		t.Fatalf("UpsertCVEAll: %v", err)
+	}
+	if err := w.BuildDerived(ctx); err != nil {
+		w.Close()
+		t.Fatalf("BuildDerived: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	code, stdout, stderr := runCLI("get", "-db", path, "-json", "CVE-2024-9998")
+	if code != exitOK {
+		t.Fatalf("get exit = %d, stderr = %s", code, stderr)
+	}
+	var env report.GetEnvelope
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("get -json is not valid JSON: %v\n%q", err, stdout)
+	}
+	if env.CVE.Summary != summary {
+		t.Fatalf("summary = %q, want %q", env.CVE.Summary, summary)
+	}
+
+	code, stdout, stderr = runCLI("search", "-db", path, "safe", "-json")
+	if code != exitOK {
+		t.Fatalf("search exit = %d, stderr = %s", code, stderr)
+	}
+	if !json.Valid([]byte(stdout)) {
+		t.Fatalf("search -json is not valid JSON: %q", stdout)
+	}
+}

@@ -9,9 +9,10 @@ const hexDigits = "0123456789abcdef"
 
 // terminalWriter escapes control runes written to a terminal-facing stream.
 // CVE text comes from upstream feeds: raw ESC/BEL/C1 bytes let a crafted record
-// move the cursor, spoof lines, or open OSC 8 links. JSON output never contains
-// raw controls (encoding/json escapes them), so wrapping every stdout write is
-// safe for -json.
+// move the cursor, spoof lines, or open OSC 8 links. Only the text renderers
+// wrap their writer; JSON output is never passed through this filter because
+// encoding/json leaves DEL and C1 runes unescaped and rewriting them would
+// corrupt the document.
 type terminalWriter struct {
 	dst     io.Writer
 	pending [utf8.UTFMax]byte

@@ -18,7 +18,6 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	stdout = newTerminalWriter(stdout)
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return exitUsage
