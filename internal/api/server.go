@@ -398,7 +398,9 @@ func (s *server) stats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, report.StatsEnvelope{SchemaVersion: report.SchemaVersion, Stats: report.StatsFromStore(st)})
+	doc := report.StatsFromStore(st)
+	doc.DBPath = ""
+	writeJSON(w, http.StatusOK, report.StatsEnvelope{SchemaVersion: report.SchemaVersion, Stats: doc})
 }
 
 func isNotFound(err error) bool { return errors.Is(err, store.ErrNotFound) }

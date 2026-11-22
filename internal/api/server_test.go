@@ -311,3 +311,24 @@ func TestSearchRejectsOversizedRequest(t *testing.T) {
 		t.Fatalf("offset=10000 status = %d: %s", resp.StatusCode, body)
 	}
 }
+
+func TestStatsHidesDBPath(t *testing.T) {
+	path := storetest.Build(t)
+	db := storetest.Open(t, path)
+	srv := httptest.NewServer(New(db, io.Discard))
+	defer srv.Close()
+
+	resp, body := get(t, srv, "/v1/stats")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	if bytes.Contains(body, []byte("dbPath")) {
+		t.Fatalf("stats body exposes dbPath: %s", body)
+	}
+	if bytes.Contains(body, []byte(path)) {
+		t.Fatalf("stats body contains the database path: %s", body)
+	}
+	if env := decode[report.StatsEnvelope](t, body); env.Stats.DBPath != "" {
+		t.Fatalf("decoded dbPath = %q", env.Stats.DBPath)
+	}
+}
