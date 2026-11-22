@@ -26,12 +26,42 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS ?= -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-.PHONY: all build install uninstall vet test bench fmt check clean
+# Every public repo publishes the same five targets and one SHA256SUMS.
+RELEASE_TARGETS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+DIST ?= dist
+RELEASE_LDFLAGS ?= -s -w $(LDFLAGS)
+
+.PHONY: all build install uninstall vet test bench fmt check clean release-gate release-binaries verify-release release
 
 all: check vet test
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/cv3
+
+# The gate a tag must pass. The release workflow runs this before it builds
+# anything, so a failing gate publishes nothing.
+release-gate: check vet test
+	GOOS=windows GOARCH=amd64 $(GO) vet ./...
+	GOOS=darwin  GOARCH=arm64 $(GO) vet ./...
+
+release-binaries:
+	rm -rf $(DIST)
+	mkdir -p $(DIST)
+	@set -e; for t in $(RELEASE_TARGETS); do \
+	  goos=$${t%/*}; goarch=$${t#*/}; \
+	  out=$(DIST)/$(BIN)_$(VERSION)_$${goos}_$${goarch}; \
+	  [ "$$goos" = windows ] && out=$$out.exe; \
+	  echo "  build $$out"; \
+	  GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 $(GO) build -trimpath \
+	    -ldflags "$(RELEASE_LDFLAGS)" -o $$out ./cmd/$(BIN); \
+	done
+	cd $(DIST) && sha256sum $(BIN)_* | sort -k2 > SHA256SUMS
+	@echo "  $(DIST)/SHA256SUMS"
+
+verify-release:
+	sh tools/release/verify.sh $(DIST) $(VERSION)
+
+release: release-binaries verify-release
 
 # Installs the binary and puts the database at the path the code expects. A
 # database already in place is never overwritten: an existing corpus is the
@@ -93,3 +123,4 @@ check:
 clean:
 	$(GO) clean -testcache
 	rm -f $(BIN)
+	rm -rf $(DIST)

@@ -16,6 +16,9 @@
 *.part
 coverage.out
 
+# `make release-binaries` writes the release artifacts here.
+/dist/
+
 # Editor and OS droppings.
 .DS_Store
 *~
