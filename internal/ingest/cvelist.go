@@ -137,6 +137,11 @@ func ListReleases(ctx context.Context, token string, perPage int) ([]Release, er
 
 var cveFileRE = regexp.MustCompile(`(?i)^CVE-\d{4}-\d{4,}\.json$`)
 
+// maxNestedArchiveBytes bounds the decompressed size of the inner cves.zip.
+// The real all-CVEs asset is 717 MB; 2 GiB leaves headroom. It is a variable so
+// the limit test can shrink it.
+var maxNestedArchiveBytes int64 = 2 << 30
+
 // WalkCVEZip streams every CVE JSON member of a cvelistV5 archive. Members are
 // read in place: the archive is never extracted wholesale, and only one record
 // is held in memory at a time. Both known layouts match, because only the base
@@ -146,11 +151,14 @@ var cveFileRE = regexp.MustCompile(`(?i)^CVE-\d{4}-\d{4,}\.json$`)
 // "cves.zip" member (verified 2026-10-30: 648 MB outer, 717 MB inner, 417 488
 // CVE files), so a nested archive is unwrapped through a temporary file in the
 // same directory.
-func WalkCVEZip(archive string, fn func(id string, raw []byte) error) (parsed, skipped int, err error) {
-	return walkZip(archive, fn, 0)
+func WalkCVEZip(ctx context.Context, archive string, fn func(id string, raw []byte) error) (parsed, skipped int, err error) {
+	return walkZip(ctx, archive, fn, 0)
 }
 
-func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (int, int, error) {
+func walkZip(ctx context.Context, archive string, fn func(id string, raw []byte) error, depth int) (int, int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, 0, err
+	}
 	f, err := openFile(archive)
 	if err != nil {
 		return 0, 0, fmt.Errorf("ingest: cvelistV5: %w", err)
@@ -168,6 +176,9 @@ func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (i
 	matches := 0
 	var nested *zip.File
 	for _, zf := range zr.File {
+		if err := ctx.Err(); err != nil {
+			return 0, 0, err
+		}
 		if zf.FileInfo().IsDir() {
 			continue
 		}
@@ -177,6 +188,9 @@ func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (i
 	}
 	if matches == 0 {
 		for _, zf := range zr.File {
+			if err := ctx.Err(); err != nil {
+				return 0, 0, err
+			}
 			if zf.FileInfo().IsDir() || !strings.EqualFold(path.Ext(zf.Name), ".zip") {
 				continue
 			}
@@ -192,11 +206,11 @@ func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (i
 			return 0, len(zr.File), fmt.Errorf("ingest: cvelistV5: %s: nested archives deeper than one level", archive)
 		}
 		inner := archive + ".inner"
-		if err := extractMember(nested, inner); err != nil {
+		if err := extractMember(ctx, nested, inner); err != nil {
 			return 0, len(zr.File), err
 		}
 		f.Close()
-		parsed, skipped, err := walkZip(inner, fn, depth+1)
+		parsed, skipped, err := walkZip(ctx, inner, fn, depth+1)
 		os.Remove(inner)
 		return parsed, skipped, err
 	}
@@ -204,6 +218,9 @@ func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (i
 	parsedCount := 0
 	skippedCount := 0
 	for _, zf := range zr.File {
+		if err := ctx.Err(); err != nil {
+			return parsedCount, skippedCount, err
+		}
 		if zf.FileInfo().IsDir() {
 			skippedCount++
 			continue
@@ -237,8 +254,13 @@ func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (i
 }
 
 // extractMember writes one archive member to dest, used only to make a nested
-// archive addressable (zip readers need a ReaderAt).
-func extractMember(zf *zip.File, dest string) error {
+// archive addressable (zip readers need a ReaderAt). The decompressed size is
+// bounded so a crafted inner archive cannot fill the cache filesystem.
+func extractMember(ctx context.Context, zf *zip.File, dest string) error {
+	if zf.UncompressedSize64 > uint64(maxNestedArchiveBytes) {
+		return fmt.Errorf("ingest: cvelistV5: %s: nested archive of %d bytes exceeds the %d-byte limit",
+			zf.Name, zf.UncompressedSize64, maxNestedArchiveBytes)
+	}
 	rc, err := zf.Open()
 	if err != nil {
 		return fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
@@ -248,10 +270,38 @@ func extractMember(zf *zip.File, dest string) error {
 	if err != nil {
 		return fmt.Errorf("ingest: cvelistV5: %w", err)
 	}
-	if _, err := io.Copy(out, rc); err != nil {
+	fail := func(err error) error {
 		out.Close()
 		os.Remove(dest)
 		return fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
+	}
+	buf := make([]byte, 32<<10)
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			out.Close()
+			os.Remove(dest)
+			return err
+		}
+		n, rerr := rc.Read(buf)
+		if n > 0 {
+			total += int64(n)
+			if total > maxNestedArchiveBytes {
+				out.Close()
+				os.Remove(dest)
+				return fmt.Errorf("ingest: cvelistV5: %s: nested archive of %d bytes exceeds the %d-byte limit",
+					zf.Name, total, maxNestedArchiveBytes)
+			}
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				return fail(werr)
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return fail(rerr)
+		}
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(dest)

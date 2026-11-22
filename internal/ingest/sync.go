@@ -185,7 +185,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	// Base corpus.
 	written, failed, err := runPipeline(ctx, o.Workers, 512,
 		func(yield func([]byte) error) error {
-			_, _, err := WalkCVEZip(allZip, func(id string, raw []byte) error {
+			_, _, err := WalkCVEZip(ctx, allZip, func(id string, raw []byte) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -459,7 +459,7 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 		}
 		written, failed, err := runPipeline(ctx, o.Workers, 512,
 			func(yield func([]byte) error) error {
-				_, _, err := WalkCVEZip(dest, func(id string, raw []byte) error {
+				_, _, err := WalkCVEZip(ctx, dest, func(id string, raw []byte) error {
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
