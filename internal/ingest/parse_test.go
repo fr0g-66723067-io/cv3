@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -364,5 +366,53 @@ func TestWalkCVEZipHonoursContext(t *testing.T) {
 	_, _, err := WalkCVEZip(ctx, path, func(id string, raw []byte) error { return nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("WalkCVEZip error = %v, want context.Canceled", err)
+	}
+}
+
+func gzipDoc(t *testing.T, body string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write([]byte(body)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestParseNVDFeedRejectsMalformed(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"empty object", `{}`, true},
+		{"array", `[]`, true},
+		{"missing vulnerabilities", `{"timestamp":"2026-10-30T20:00:00.000"}`, true},
+		{"missing timestamp", `{"vulnerabilities":[]}`, true},
+		{"truncated", `{"timestamp":"2026-10-30T20:00:00.000"`, true},
+		{"dated empty feed", `{"timestamp":"2026-10-30T20:00:00.000","vulnerabilities":[]}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			count, ts, err := ParseNVDFeed(bytes.NewReader(gzipDoc(t, tc.body)), func(raw []byte) error { return nil })
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("accepted malformed feed: count=%d timestamp=%q", count, ts)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseNVDFeed: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("count = %d, want 0", count)
+			}
+			if model.NormalizeTime(ts) == "" {
+				t.Fatalf("timestamp = %q, want a usable timestamp", ts)
+			}
+		})
 	}
 }
