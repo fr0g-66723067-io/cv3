@@ -154,8 +154,12 @@ guessed at.
 ## HTTP API
 
 ```
-cv3 serve [-addr 127.0.0.1:8080]
+cv3 serve [-addr ADDR]
 ```
+
+`-addr` defaults to `127.0.0.1:8080`. A non-loopback bind requires
+`$CV3_SERVE_TOKEN`, and every request must then send
+`Authorization: Bearer <token>`.
 
 Read-only JSON, same schema as `-json` (`"schemaVersion": "1"`):
 

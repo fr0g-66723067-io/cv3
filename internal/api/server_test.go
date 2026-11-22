@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fr0g-66723067-io/cv3/internal/report"
 	"github.com/fr0g-66723067-io/cv3/internal/store/storetest"
@@ -245,5 +246,68 @@ func TestStatsRoute(t *testing.T) {
 	}
 	if resp, body := get(t, srv, "/v1/stats?severity=bogus"); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("severity=bogus status = %d: %s", resp.StatusCode, body)
+	}
+}
+
+func TestBoundedRejectsWhenSaturated(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	h := newBounded(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-release
+	}), 1, time.Second)
+
+	go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	<-started
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	close(release)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After")
+	}
+}
+
+func TestBoundedSetsDeadline(t *testing.T) {
+	seen := make(chan bool, 1)
+	h := newBounded(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, ok := r.Context().Deadline()
+		seen <- ok
+	}), 1, 20*time.Millisecond)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if !<-seen {
+		t.Fatal("request context has no deadline")
+	}
+}
+
+func TestBoundedRejectsLongQuery(t *testing.T) {
+	h := newBounded(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler ran for an oversized query string")
+	}), 1, time.Second)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?"+strings.Repeat("a", 5000), nil))
+	if rec.Code != http.StatusRequestURITooLong {
+		t.Fatalf("status = %d, want 414", rec.Code)
+	}
+}
+
+func TestSearchRejectsOversizedRequest(t *testing.T) {
+	srv, _ := newServer(t)
+	paths := []string{
+		"/v1/search?q=" + strings.Repeat("a", maxQueryBytes+1),
+		"/v1/search?offset=10001",
+		"/v1/search?" + strings.Repeat("severity=high&", maxFilterValues) + "severity=high",
+	}
+	for _, path := range paths {
+		resp, body := get(t, srv, path)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s status = %d: %s", path, resp.StatusCode, body)
+		}
+	}
+	resp, body := get(t, srv, "/v1/search?offset=10000")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("offset=10000 status = %d: %s", resp.StatusCode, body)
 	}
 }

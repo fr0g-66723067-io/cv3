@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fr0g-66723067-io/cv3/internal/model"
 	"github.com/fr0g-66723067-io/cv3/internal/report"
@@ -21,6 +22,15 @@ import (
 var (
 	cveIDRE = regexp.MustCompile(`^CVE-\d{4}-\d{4,}$`)
 	cweIDRE = regexp.MustCompile(`^CWE-[0-9]+$`)
+)
+
+const (
+	maxConcurrentRequests = 8
+	requestTimeout        = 30 * time.Second
+	maxRawQueryBytes      = 4096
+	maxFilterValues       = 32
+	maxQueryBytes         = 512
+	maxOffset             = 10000
 )
 
 // New builds the HTTP handler over an open read-only database. Diagnostics go to
@@ -35,7 +45,34 @@ func New(db *store.DB, log io.Writer) http.Handler {
 	mux.HandleFunc("GET /v1/cwe/{id}", s.getCWE)
 	mux.HandleFunc("GET /v1/cwe", s.cweSearch)
 	mux.HandleFunc("GET /v1/stats", s.stats)
-	return mux
+	return newBounded(mux, maxConcurrentRequests, requestTimeout)
+}
+
+// newBounded caps concurrent handlers and gives every request a deadline. It is
+// the application-level budget that keeps an exposed listener from spending
+// every connection, SQLite reader and CPU core on unauthenticated work.
+func newBounded(h http.Handler, limit int, timeout time.Duration) http.Handler {
+	if limit <= 0 {
+		limit = 1
+	}
+	sem := make(chan struct{}, limit)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(r.URL.RawQuery) > maxRawQueryBytes {
+			writeError(w, http.StatusRequestURITooLong, "query string too long")
+			return
+		}
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server busy")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 type server struct {
@@ -132,6 +169,10 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		UnenrichedOnly: queryBool(q, "noNvd"),
 		Sort:           strings.ToLower(strings.TrimSpace(first(q, "sort"))),
 	}
+	if len(query.Query) > maxQueryBytes {
+		writeError(w, http.StatusBadRequest, "q is too long")
+		return
+	}
 	for _, raw := range queryValues(q, "severity") {
 		v, err := store.ParseSeverity(raw)
 		if err != nil {
@@ -151,6 +192,12 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	query.Vendors = queryValues(q, "vendor")
 	query.Products = queryValues(q, "product")
+	if len(query.Severities) > maxFilterValues || len(query.States) > maxFilterValues ||
+		len(query.Statuses) > maxFilterValues || len(query.CWEs) > maxFilterValues ||
+		len(query.Vendors) > maxFilterValues || len(query.Products) > maxFilterValues {
+		writeError(w, http.StatusBadRequest, "too many filter values")
+		return
+	}
 
 	yearFrom, yearTo, err := store.ParseYearRange(first(q, "year"))
 	if err != nil {
@@ -189,6 +236,10 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	offset, err := queryInt(q, "offset", 0)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if offset > maxOffset {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("offset must be <= %d", maxOffset))
 		return
 	}
 	limit = store.ClampLimit(limit, 20)

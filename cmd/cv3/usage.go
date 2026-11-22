@@ -10,7 +10,7 @@ Usage:
   cv3 cpe    [-db PATH] [-vendor V] [-product P] [-version X] [-part a|o|h] [-cpe CPE] [-limit N] [-json]
   cv3 cwe    [-db PATH] [<CWE-ID>] [-search TERMS] [-limit N] [-json]
   cv3 stats  [-db PATH] [-severity S] [-json]
-  cv3 serve  [-db PATH] [-addr 127.0.0.1:8080]
+  cv3 serve  [-db PATH] [-addr ADDR]
   cv3 version | help
 
 -years A-B is a 'cv3 sync' flag: it selects which NVD year feeds are ingested.
@@ -33,6 +33,9 @@ search flags:
 per id, concatenated (a JSON stream; jq reads it as a sequence). 'unknown' is a
 record with no CVSS metric; 'cv3 stats -severity' takes the same bands and scopes
 every CVE-derived figure to them.
+
+'-addr' defaults to 127.0.0.1:8080. A non-loopback bind requires
+$CV3_SERVE_TOKEN; clients then send 'Authorization: Bearer <token>'.
 
 Database path: -db, else $CV3_DB, else $XDG_DATA_HOME/cv3/cv3.db, else
 ~/.local/share/cv3/cv3.db. 'make install' puts the database at that default.
