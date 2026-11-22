@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/fr0g-66723067-io/cv3/internal/model"
 	"github.com/fr0g-66723067-io/cv3/internal/report"
+	"github.com/fr0g-66723067-io/cv3/internal/store"
 	"github.com/fr0g-66723067-io/cv3/internal/store/storetest"
 )
 
@@ -227,5 +231,54 @@ func TestFlagsAfterPositionals(t *testing.T) {
 	}
 	if !strings.Contains(stdout, storetest.EnrichedID) {
 		t.Fatalf("output = %s", stdout)
+	}
+}
+
+func TestCLITextEscapesImportedControls(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cv3.db")
+	w, err := store.Create(path)
+	if err != nil {
+		t.Fatalf("store.Create: %v", err)
+	}
+	ctx := context.Background()
+	if err := w.UpsertCVEAll(ctx, []*model.CVE{{
+		ID:         "CVE-2024-9999",
+		State:      "PUBLISHED",
+		Published:  "2024-01-01T00:00:00Z",
+		Summary:    "safe\x1b[2J\x1b]8;;https://evil.test\x07click",
+		SummarySrc: "cna",
+	}}); err != nil {
+		w.Close()
+		t.Fatalf("UpsertCVEAll: %v", err)
+	}
+	if err := w.BuildDerived(ctx); err != nil {
+		w.Close()
+		t.Fatalf("BuildDerived: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	code, stdout, stderr := runCLI("get", "-db", path, "CVE-2024-9999")
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if strings.ContainsAny(stdout, "\x1b\x07") {
+		t.Fatalf("raw control bytes in text output: %q", stdout)
+	}
+	if !strings.Contains(stdout, `\x1b[2J`) {
+		t.Fatalf("escaped summary missing:\n%s", stdout)
+	}
+
+	code, stdout, stderr = runCLI("get", "-db", path, "-json", "CVE-2024-9999")
+	if code != exitOK {
+		t.Fatalf("json exit = %d, stderr = %s", code, stderr)
+	}
+	var env report.GetEnvelope
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("decode: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(env.CVE.Summary, "\x1b") {
+		t.Fatalf("JSON summary lost the raw value: %q", env.CVE.Summary)
 	}
 }
