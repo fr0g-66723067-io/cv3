@@ -17,6 +17,16 @@ cv3 serve     # local JSON API on 127.0.0.1:8080
 
 ## Install
 
+Every tag publishes five static binaries and `SHA256SUMS`; replace `vX.Y.Z` with
+the newest tag. [docs/release.md](docs/release.md) documents the release process.
+
+```sh
+# released binary (linux/amd64 shown; all five targets are on the release)
+curl -LO https://github.com/fr0g-66723067-io/cv3/releases/download/vX.Y.Z/cv3_vX.Y.Z_linux_amd64
+curl -LO https://github.com/fr0g-66723067-io/cv3/releases/download/vX.Y.Z/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
 Go 1.27.3 or newer (the `go` directive in `go.mod`); no cgo, no external
 service, one dependency (`modernc.org/sqlite`, FTS5 compiled in):
 
@@ -170,7 +180,9 @@ compatibility promise, and a tag is the release unit — `go install
 github.com/fr0g-66723067-io/cv3/cmd/cv3@v0.2.0` pins the CLI, the JSON schema and
 the database schema together. `@latest` resolves to the newest tag; a commit on
 `main` past that tag is a pseudo-version, not a release. Every tag's notes live
-in [CHANGELOG.md](CHANGELOG.md).
+in [CHANGELOG.md](CHANGELOG.md); [docs/release.md](docs/release.md) is the
+release process, and every tag publishes five static binaries plus
+`SHA256SUMS`.
 
 Two constants come from the data rather than this module's code:
 
