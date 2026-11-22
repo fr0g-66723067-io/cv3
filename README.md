@@ -25,6 +25,7 @@ the newest tag. [docs/release.md](docs/release.md) documents the release process
 curl -LO https://github.com/fr0g-66723067-io/cv3/releases/download/vX.Y.Z/cv3_vX.Y.Z_linux_amd64
 curl -LO https://github.com/fr0g-66723067-io/cv3/releases/download/vX.Y.Z/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
+chmod +x cv3_vX.Y.Z_linux_amd64
 ```
 
 Go 1.27.3 or newer (the `go` directive in `go.mod`); no cgo, no external
