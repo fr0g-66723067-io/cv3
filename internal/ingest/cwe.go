@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"os"
 	"path"
 	"strings"
 
@@ -136,7 +135,7 @@ func cleanXMLText(s string) string {
 
 // ParseCWEFile reads a catalog XML from disk.
 func ParseCWEFile(file string) ([]model.CWE, string, error) {
-	f, err := os.Open(file)
+	f, err := openFile(file)
 	if err != nil {
 		return nil, "", fmt.Errorf("ingest: cwe catalog: %w", err)
 	}

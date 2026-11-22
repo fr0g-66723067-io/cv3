@@ -151,7 +151,7 @@ func WalkCVEZip(archive string, fn func(id string, raw []byte) error) (parsed, s
 }
 
 func walkZip(archive string, fn func(id string, raw []byte) error, depth int) (int, int, error) {
-	f, err := os.Open(archive)
+	f, err := openFile(archive)
 	if err != nil {
 		return 0, 0, fmt.Errorf("ingest: cvelistV5: %w", err)
 	}
@@ -244,7 +244,7 @@ func extractMember(zf *zip.File, dest string) error {
 		return fmt.Errorf("ingest: cvelistV5: %s: %w", zf.Name, err)
 	}
 	defer rc.Close()
-	out, err := os.Create(dest)
+	out, err := createFile(dest)
 	if err != nil {
 		return fmt.Errorf("ingest: cvelistV5: %w", err)
 	}

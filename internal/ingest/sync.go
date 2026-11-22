@@ -364,7 +364,7 @@ func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, fresh 
 	if !o.KeepCache {
 		defer os.Remove(dest)
 	}
-	f, err := os.Open(dest)
+	f, err := openFile(dest)
 	if err != nil {
 		return 0, "", fmt.Errorf("ingest: nvd %s: %w", name, err)
 	}
