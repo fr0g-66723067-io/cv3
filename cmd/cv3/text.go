@@ -11,6 +11,7 @@ import (
 
 // writeSearchText renders a search envelope as an aligned table.
 func writeSearchText(w io.Writer, env report.SearchEnvelope) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "CVE\tSCORE\tSEV\tCVSS\tPUBLISHED\tCWE\tSUMMARY")
 	for _, h := range env.Results {
@@ -55,6 +56,7 @@ func writeSearchText(w io.Writer, env report.SearchEnvelope) error {
 
 // writeGetText renders one record as labelled lines.
 func writeGetText(w io.Writer, doc report.CVEDoc) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	line := func(label, value string) {
 		if value == "" {
@@ -147,6 +149,7 @@ func writeGetText(w io.Writer, doc report.CVEDoc) error {
 
 // writeCPEText renders applicability hits.
 func writeCPEText(w io.Writer, env report.CPEEnvelope) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "CVE\tSCORE\tSEV\tMATCH\tRANGE\tCRITERIA")
 	for _, h := range env.Results {
@@ -177,6 +180,7 @@ func writeCPEText(w io.Writer, env report.CPEEnvelope) error {
 
 // writeCWEText renders a catalog entry.
 func writeCWEText(w io.Writer, doc report.CWEDoc) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "ID:\t%s\n", doc.ID)
 	fmt.Fprintf(tw, "Name:\t%s\n", doc.Name)
@@ -201,6 +205,7 @@ func writeCWEText(w io.Writer, doc report.CWEDoc) error {
 
 // writeCWEListText renders catalog search results.
 func writeCWEListText(w io.Writer, env report.CWEListEnvelope) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "CWE\tABSTR\tCVES\tNAME")
 	for _, c := range env.Results {
@@ -215,6 +220,7 @@ func writeCWEListText(w io.Writer, env report.CWEListEnvelope) error {
 
 // writeStatsText renders the corpus summary.
 func writeStatsText(w io.Writer, s report.StatsDoc) error {
+	w = newTerminalWriter(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "database:\t%s\n", s.DBPath)
 	fmt.Fprintf(tw, "size:\t%s\n", humanBytes(s.DBSize))

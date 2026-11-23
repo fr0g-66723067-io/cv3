@@ -121,3 +121,62 @@ func TestUpdateSurvivesMissingRollingFeed(t *testing.T) {
 		t.Fatalf("summary not filled: %+v", sum)
 	}
 }
+
+// TestUpdateKeepsNVDWatermarkOnMalformedFeed pins that a feed which parses as a
+// successful empty document cannot advance SourceNVD: the parser rejects it, the
+// update warns, and the previous watermark stays in place.
+func TestUpdateKeepsNVDWatermarkOnMalformedFeed(t *testing.T) {
+	f := newFixtureServer(t)
+	allZip := zipBytes(t, map[string][]byte{
+		"cves/2024/3xxx/CVE-2024-3094.json": readFixture(t, "cvelist", "CVE-2024-3094.json"),
+	})
+	f.addRelease("cve_2026-10-30_1800Z", "2026-10-30_all_CVEs_at_midnight.zip.zip", "/assets/all-1800.zip", allZip)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cv3.db")
+	opts := f.options(dbPath, filepath.Join(dir, "cache"))
+	now := time.Date(2026, 10, 30, 19, 30, 0, 0, time.UTC)
+	opts.Now = func() time.Time { return now }
+	if _, err := Sync(context.Background(), opts); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	before, err := openRO(t, dbPath).SourceState(context.Background())
+	if err != nil {
+		t.Fatalf("SourceState: %v", err)
+	}
+	nvdBefore := before[SourceNVD]
+	if nvdBefore == "" {
+		t.Fatal("sync wrote no NVD watermark")
+	}
+
+	f.mu.Lock()
+	f.feedGz = gzipDoc(t, `{}`)
+	f.mu.Unlock()
+
+	updatedAt := now.Add(time.Hour)
+	opts.Now = func() time.Time { return updatedAt }
+	sum, err := Update(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(sum.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want one per rolling feed", sum.Warnings)
+	}
+	joined := strings.Join(sum.Warnings, " ")
+	for _, name := range []string{"modified", "recent"} {
+		if !strings.Contains(joined, name) {
+			t.Fatalf("warnings = %v, missing %s", sum.Warnings, name)
+		}
+	}
+
+	after, err := openRO(t, dbPath).SourceState(context.Background())
+	if err != nil {
+		t.Fatalf("SourceState: %v", err)
+	}
+	if after[SourceNVD] != nvdBefore {
+		t.Fatalf("SourceNVD = %q, want preserved %q", after[SourceNVD], nvdBefore)
+	}
+	if after[SourceNVD] == updatedAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("SourceNVD advanced to the local clock: %q", after[SourceNVD])
+	}
+}

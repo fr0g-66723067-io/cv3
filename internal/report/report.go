@@ -412,7 +412,7 @@ type StatsDoc struct {
 	Refs        int               `json:"refs"`
 	FTSRows     int               `json:"ftsRows"`
 	DBSize      int64             `json:"dbSize"`
-	DBPath      string            `json:"dbPath"`
+	DBPath      string            `json:"dbPath,omitempty"`
 	BuiltAt     string            `json:"builtAt,omitempty"`
 	Severities  []string          `json:"severities,omitempty"`
 	SourceState map[string]string `json:"sourceState"`

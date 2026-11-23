@@ -107,7 +107,7 @@ func (f *Fetcher) get(ctx context.Context, url, dest string, log io.Writer, forc
 
 func (f *Fetcher) getOnce(ctx context.Context, url, dest string) error {
 	part := dest + ".part"
-	fh, err := os.OpenFile(part, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	fh, err := openIn(filepath.Dir(part), filepath.Base(part), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("ingest: fetch: %w", err)
 	}

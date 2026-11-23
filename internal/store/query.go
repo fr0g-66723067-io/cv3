@@ -111,15 +111,17 @@ type SearchResult struct {
 	Hits  []Hit
 }
 
-// Search runs a full-text and/or structured query.
-func (d *DB) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
-	q.normalize()
-	fts, err := ftsQuery(q.Query, q.Or)
-	if err != nil {
-		return SearchResult{}, err
-	}
-	conds := q.conds()
+// searchSQL is one assembled search. page and count share where/args; every
+// fragment is a compile-time constant or a generated "?,?,…" list, so query
+// text never contains a value from the caller.
+type searchSQL struct {
+	page  string
+	count string
+	args  []any
+}
 
+func buildSearchSQL(q *SearchQuery, fts string) searchSQL {
+	conds := q.conds()
 	from := "FROM cve c"
 	snippet := "''"
 	if fts != "" {
@@ -128,16 +130,32 @@ func (d *DB) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
 		conds = append([]cond{{sql: "cve_fts MATCH ?", args: []any{fts}}}, conds...)
 	}
 	where, args := renderConds(conds)
-
 	order := q.orderBy(fts != "")
-	sel := `SELECT c.id, c.best_score, c.best_sev, c.best_ver, c.published, c.state, c.enriched,
+	page := `SELECT c.id, c.best_score, c.best_sev, c.best_ver, c.published, c.state, c.enriched,
 		c.summary, ` + snippet + ` ` + from + where + ` ` + order + ` LIMIT ? OFFSET ?`
-	rows, err := d.db.QueryContext(ctx, sel, append(args, q.Limit, q.Offset)...)
+	return searchSQL{page: page, count: `SELECT count(*) ` + from + where, args: args}
+}
+
+// Search runs a full-text and/or structured query.
+func (d *DB) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
+	q.normalize()
+	fts, err := ftsQuery(q.Query, q.Or)
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	plan := buildSearchSQL(&q, fts)
+	total, err := d.countSearch(ctx, plan.count, plan.args)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	res := SearchResult{Total: total, Hits: make([]Hit, 0, q.Limit)}
+
+	rows, err := d.db.QueryContext(ctx, plan.page, append(plan.args, q.Limit, q.Offset)...)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("store: search: %w", err)
 	}
 	defer rows.Close()
-	res := SearchResult{Hits: make([]Hit, 0, q.Limit)}
 	for rows.Next() {
 		var (
 			h       Hit
@@ -171,20 +189,15 @@ func (d *DB) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
 	}
 	rows.Close()
 
-	total, err := d.countSearch(ctx, from, where, args)
-	if err != nil {
-		return SearchResult{}, err
-	}
-	res.Total = total
 	if err := d.fillCWEs(ctx, res.Hits); err != nil {
 		return SearchResult{}, err
 	}
 	return res, nil
 }
 
-func (d *DB) countSearch(ctx context.Context, from, where string, args []any) (int, error) {
+func (d *DB) countSearch(ctx context.Context, query string, args []any) (int, error) {
 	var n int
-	if err := d.db.QueryRowContext(ctx, `SELECT count(*) `+from+where, args...).Scan(&n); err != nil {
+	if err := d.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("store: count: %w", err)
 	}
 	return n, nil

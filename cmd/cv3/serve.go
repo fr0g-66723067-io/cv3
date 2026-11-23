@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +25,15 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	if status, ok := parseFlags(fs, flags, stdout, stderr); !ok {
 		return status
 	}
+	host, _, err := net.SplitHostPort(*addr)
+	if err != nil {
+		return fail(stderr, exitUsage, "serve: -addr %q: %v", *addr, err)
+	}
+	token := strings.TrimSpace(os.Getenv("CV3_SERVE_TOKEN"))
+	if !isLoopbackHost(host) && token == "" {
+		return fail(stderr, exitUsage,
+			"serve: -addr %s is not loopback; set CV3_SERVE_TOKEN to require bearer authentication", *addr)
+	}
 	d, code := openReadOnly(stderr, *db)
 	if code != exitOK {
 		return code
@@ -34,9 +44,17 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, exitData, "listen %s: %v", *addr, err)
 	}
+	handler := api.New(d, stderr)
+	if token != "" {
+		handler = api.RequireBearer(handler, token)
+	}
 	srv := &http.Server{
-		Handler:           api.New(d, stderr),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 	done := make(chan struct{})
 	go func() {
@@ -58,4 +76,13 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	}
 	<-done
 	return exitOK
+}
+
+// isLoopbackHost reports whether host names only the local machine.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

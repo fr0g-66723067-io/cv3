@@ -2,9 +2,15 @@ package ingest
 
 import (
 	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/rand"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/fr0g-66723067-io/cv3/internal/model"
@@ -253,7 +259,7 @@ func TestWalkCVEZip(t *testing.T) {
 	}
 
 	var ids []string
-	parsed, skipped, err := WalkCVEZip(path, func(id string, raw []byte) error {
+	parsed, skipped, err := WalkCVEZip(context.Background(), path, func(id string, raw []byte) error {
 		ids = append(ids, id)
 		return nil
 	})
@@ -278,7 +284,7 @@ func TestWalkCVEZipEmptyArchiveFails(t *testing.T) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, _, err := WalkCVEZip(path, func(id string, raw []byte) error { return nil }); err == nil {
+	if _, _, err := WalkCVEZip(context.Background(), path, func(id string, raw []byte) error { return nil }); err == nil {
 		t.Fatal("WalkCVEZip accepted an archive with no CVE records")
 	}
 }
@@ -307,7 +313,7 @@ func TestWalkCVEZipNested(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	var ids []string
-	parsed, _, err := WalkCVEZip(path, func(id string, raw []byte) error {
+	parsed, _, err := WalkCVEZip(context.Background(), path, func(id string, raw []byte) error {
 		ids = append(ids, id)
 		return nil
 	})
@@ -319,5 +325,94 @@ func TestWalkCVEZipNested(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".inner"); !os.IsNotExist(err) {
 		t.Fatalf("temporary inner archive left behind: %v", err)
+	}
+}
+
+func TestWalkCVEZipNestedLimit(t *testing.T) {
+	old := maxNestedArchiveBytes
+	maxNestedArchiveBytes = 1024
+	defer func() { maxNestedArchiveBytes = old }()
+
+	pad := make([]byte, 4096)
+	if _, err := rand.Read(pad); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+	inner := zipBytes(t, map[string][]byte{"pad.bin": pad})
+	outer := zipBytes(t, map[string][]byte{"cves.zip": inner})
+	path := filepath.Join(t.TempDir(), "all.zip")
+	if err := os.WriteFile(path, outer, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _, err := WalkCVEZip(context.Background(), path, func(id string, raw []byte) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "nested archive") || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("WalkCVEZip error = %v, want the nested-archive limit", err)
+	}
+	if _, statErr := os.Stat(path + ".inner"); !os.IsNotExist(statErr) {
+		t.Fatalf("oversized inner archive left behind: %v", statErr)
+	}
+}
+
+func TestWalkCVEZipHonoursContext(t *testing.T) {
+	inner := zipBytes(t, map[string][]byte{
+		"cves/2024/3xxx/CVE-2024-3094.json": []byte(`{"cveMetadata":{"cveId":"CVE-2024-3094"}}`),
+	})
+	outer := zipBytes(t, map[string][]byte{"cves.zip": inner})
+	path := filepath.Join(t.TempDir(), "all.zip")
+	if err := os.WriteFile(path, outer, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := WalkCVEZip(ctx, path, func(id string, raw []byte) error { return nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("WalkCVEZip error = %v, want context.Canceled", err)
+	}
+}
+
+func gzipDoc(t *testing.T, body string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write([]byte(body)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestParseNVDFeedRejectsMalformed(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"empty object", `{}`, true},
+		{"array", `[]`, true},
+		{"missing vulnerabilities", `{"timestamp":"2026-10-30T20:00:00.000"}`, true},
+		{"missing timestamp", `{"vulnerabilities":[]}`, true},
+		{"truncated", `{"timestamp":"2026-10-30T20:00:00.000"`, true},
+		{"dated empty feed", `{"timestamp":"2026-10-30T20:00:00.000","vulnerabilities":[]}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			count, ts, err := ParseNVDFeed(bytes.NewReader(gzipDoc(t, tc.body)), func(raw []byte) error { return nil })
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("accepted malformed feed: count=%d timestamp=%q", count, ts)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseNVDFeed: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("count = %d, want 0", count)
+			}
+			if model.NormalizeTime(ts) == "" {
+				t.Fatalf("timestamp = %q, want a usable timestamp", ts)
+			}
+		})
 	}
 }

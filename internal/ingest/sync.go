@@ -185,7 +185,7 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	// Base corpus.
 	written, failed, err := runPipeline(ctx, o.Workers, 512,
 		func(yield func([]byte) error) error {
-			_, _, err := WalkCVEZip(allZip, func(id string, raw []byte) error {
+			_, _, err := WalkCVEZip(ctx, allZip, func(id string, raw []byte) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -262,6 +262,9 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	if err := w.SetSourceState(ctx, SourceCVEList, release.Tag); err != nil {
 		return fail(err)
 	}
+	if nvdTimestamp == "" {
+		return fail(fmt.Errorf("ingest: sync: no NVD feed timestamp"))
+	}
 	if err := w.SetSourceState(ctx, SourceNVD, feedWatermark(nvdTimestamp)); err != nil {
 		return fail(err)
 	}
@@ -292,8 +295,6 @@ func Sync(ctx context.Context, o Options) (Summary, error) {
 	return sum, nil
 }
 
-// feedWatermark normalises a feed timestamp, falling back to the current time
-// when a feed carries none.
 // feedDest is the cache path of one NVD feed.
 func feedDest(o Options, name string) string {
 	return filepath.Join(o.CacheDir, "nvdcve-2.0-"+name+".json.gz")
@@ -340,11 +341,11 @@ func prefetchFeeds(ctx context.Context, o Options, log io.Writer) error {
 	return nil
 }
 
+// feedWatermark normalises a feed timestamp. ParseNVDFeed rejects a feed that
+// carries none, so an empty result means there is no usable feed and the caller
+// must not record freshness.
 func feedWatermark(ts string) string {
-	if norm := model.NormalizeTime(ts); norm != "" {
-		return norm
-	}
-	return time.Now().UTC().Format(time.RFC3339)
+	return model.NormalizeTime(ts)
 }
 
 // ingestFeed downloads and applies one NVD feed (a year, "recent" or
@@ -364,7 +365,7 @@ func ingestFeed(ctx context.Context, o Options, w *store.DB, name string, fresh 
 	if !o.KeepCache {
 		defer os.Remove(dest)
 	}
-	f, err := os.Open(dest)
+	f, err := openFile(dest)
 	if err != nil {
 		return 0, "", fmt.Errorf("ingest: nvd %s: %w", name, err)
 	}
@@ -459,7 +460,7 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 		}
 		written, failed, err := runPipeline(ctx, o.Workers, 512,
 			func(yield func([]byte) error) error {
-				_, _, err := WalkCVEZip(dest, func(id string, raw []byte) error {
+				_, _, err := WalkCVEZip(ctx, dest, func(id string, raw []byte) error {
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
@@ -494,8 +495,10 @@ func Update(ctx context.Context, o Options) (Summary, error) {
 		sum.ParseErrors += failed
 		nvdTimestamp = ts
 	}
-	if err := w.SetSourceState(ctx, SourceNVD, feedWatermark(nvdTimestamp)); err != nil {
-		return sum, err
+	if nvdTimestamp != "" {
+		if err := w.SetSourceState(ctx, SourceNVD, feedWatermark(nvdTimestamp)); err != nil {
+			return sum, err
+		}
 	}
 	if err := w.SetMeta(ctx, "updated_at", now().UTC().Format(time.RFC3339)); err != nil {
 		return sum, err

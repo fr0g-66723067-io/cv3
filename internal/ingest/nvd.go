@@ -111,9 +111,14 @@ func ParseNVDFeed(r io.Reader, fn func(raw []byte) error) (count int, timestamp 
 	}
 	defer zr.Close()
 	dec := json.NewDecoder(zr)
-	if _, err := dec.Token(); err != nil { // opening '{'
+	tok, err := dec.Token()
+	if err != nil {
 		return 0, "", fmt.Errorf("ingest: nvd feed: %w", err)
 	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return 0, "", fmt.Errorf("ingest: nvd feed: expected a JSON object, got %v", tok)
+	}
+	sawVulns, sawTimestamp := false, false
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
@@ -125,7 +130,9 @@ func ParseNVDFeed(r io.Reader, fn func(raw []byte) error) (count int, timestamp 
 			if err := dec.Decode(&timestamp); err != nil {
 				return count, timestamp, fmt.Errorf("ingest: nvd feed: %w", err)
 			}
+			sawTimestamp = true
 		case "vulnerabilities":
+			sawVulns = true
 			if _, err := dec.Token(); err != nil { // '['
 				return count, timestamp, fmt.Errorf("ingest: nvd feed: %w", err)
 			}
@@ -148,6 +155,19 @@ func ParseNVDFeed(r io.Reader, fn func(raw []byte) error) (count int, timestamp 
 				return count, timestamp, fmt.Errorf("ingest: nvd feed: %w", err)
 			}
 		}
+	}
+	tok, err = dec.Token()
+	if err != nil {
+		return count, timestamp, fmt.Errorf("ingest: nvd feed: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '}' {
+		return count, timestamp, fmt.Errorf("ingest: nvd feed: expected end of object, got %v", tok)
+	}
+	if !sawTimestamp || !sawVulns {
+		return count, timestamp, fmt.Errorf("ingest: nvd feed: missing timestamp or vulnerabilities")
+	}
+	if model.NormalizeTime(timestamp) == "" {
+		return count, timestamp, fmt.Errorf("ingest: nvd feed: unusable timestamp %q", timestamp)
 	}
 	return count, timestamp, nil
 }

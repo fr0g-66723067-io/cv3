@@ -643,3 +643,20 @@ func TestCWESearchLimitCap(t *testing.T) {
 		t.Fatalf("CWESearch(limit=0) returned %d rows, want the 25 default", len(def))
 	}
 }
+
+// TestSearchHostileFilter proves a filter value that looks like SQL is bound as
+// data: the query returns no rows instead of matching everything.
+func TestSearchHostileFilter(t *testing.T) {
+	path := buildDB(t, t.TempDir())
+	d := openRO(t, path)
+	res, err := d.Search(context.Background(), SearchQuery{
+		Vendors: []string{"' OR 1=1 --"},
+		Limit:   5,
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if res.Total != 0 || len(res.Hits) != 0 {
+		t.Fatalf("hostile filter matched: total=%d hits=%d", res.Total, len(res.Hits))
+	}
+}
